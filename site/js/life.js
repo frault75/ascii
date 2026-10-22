@@ -32,7 +32,7 @@ export const BUILDINGS = {
     mats: ['  m  ', ' nmn ', 'meeem', 'meeem', 'meeem', 'meeem', 'meeem', 'meeem', 'meeem', 'mmdmm'],
   },
   temple: { cap: 0, cost: { wood: 10, stone: 6 }, rows: ['   ✦   ', '  ◢█◣  ', ' ◢███◣ ', ' █○█○█ ', '▄█▓∩▓█▄'], mats: ['   o   ', '  rrr  ', ' rrrrr ', ' sgsgs ', 'sssdsss'] },
-  farm: { cap: 0, cost: { wood: 2 }, rows: ['¦ψψψψψψ¦'], mats: ['wppppppw'], flat: true },
+  farm: { cap: 0, cost: { wood: 2 }, rows: ['¦ψψψψ¦'], mats: ['wppppw'], flat: true },
   lamp: { cap: 0, cost: { wood: 2 }, rows: ['¡', '│', '│'], mats: ['t', 'w', 'w'] },
   rocket: {
     cap: 0, cost: { metal: 30, stone: 20 },
@@ -273,6 +273,35 @@ function checkBuilding(b) {
   return false;
 }
 
+const TIER = { tent: 1, hut: 2, house: 3, stonehouse: 4, tower: 5 };
+function oldestBelow(tier) {
+  let best = null;
+  for (const b of G.tribe.buildings) {
+    const tb = TIER[b.kind];
+    if (!tb || tb >= tier) continue;
+    if (!best || tb < TIER[best.kind] || (tb === TIER[best.kind] && b.id < best.id)) best = b;
+  }
+  return best;
+}
+
+export function demolish(b) {
+  const w = W();
+  const T = G.tribe;
+  for (let y = b.y; y < b.y + b.h; y++) {
+    for (let x = b.x; x < b.x + b.w; x++) {
+      const i = y * w.w + x;
+      if ((w.t[i] === E.STRUCT || w.t[i] === E.CROP || w.t[i] === E.TORCH) && w.a[i] === b.id) {
+        w.t[i] = E.EMPTY; w.a[i] = 0; w.d[i] = 0;
+        if (Math.random() < 0.3) spawnFx({ x, y, vx: (Math.random() - 0.5) * 0.4, vy: -0.15, g: 0.03, life: 40, glyph: '▪', color: [200, 180, 150] });
+      }
+    }
+  }
+  T.buildings = T.buildings.filter((q) => q !== b);
+  for (const v of T.villagers) {
+    if (v.home === b.id) { v.home = 0; if (v.inside) { v.inside = false; v.x = b.x + (b.w >> 1); v.y = b.y + b.h - 1; } }
+  }
+}
+
 const dirtyB = new Set();
 on('structHit', (id) => dirtyB.add(id));
 
@@ -426,6 +455,24 @@ function assign(v) {
         return;
       }
       T.blocked = (T.blocked || 0) + 1;
+      // no free land: replace the oldest, humblest dwelling with a better one
+      const up = TIER[kind] ? oldestBelow(TIER[kind]) : null;
+      if (up) {
+        const cx = up.x + (up.w >> 1);
+        demolish(up);
+        const s2 = findSite(kind, cx, 8);
+        if (s2) {
+          pay(BUILDINGS[kind].cost);
+          v.site = { kind, ...s2 };
+          T.building = null;
+          emit('upgrade', up.kind, kind);
+          walkTo(v, s2.x + (s2.bw >> 1), s2.y, 'build', 2);
+          return;
+        }
+      }
+      // nowhere to put it: try something else for a while
+      (T.skip || (T.skip = {}))[kind] = G.env.time + 4000;
+      T.building = null;
     }
     v.job = 'idle';
   } else if (job === 'pray') {
@@ -648,6 +695,7 @@ export function updateLife() {
     }
     const wet = here === E.WATER || here === E.OIL || here === E.FISH;
     const below0 = t[i + w.w];
+    if (wet) v.fall = 0;
     if (wet && !STAND[below0]) {
       // swimming: rise to the surface, then paddle towards the shore
       const up = t[i - w.w];
@@ -892,7 +940,7 @@ function manage() {
 
   // faith production per second
   const temples = countB('temple');
-  T.faithRate = adults.length * 0.06 * (1 + T.era * 0.35) * (0.4 + T.happiness) * (1 + temples * 0.4) + T.villagers.filter((v) => v.action === 'pray' && v.state === 'work').length * 0.08;
+  T.faithRate = (adults.length + (pop - adults.length) * 0.3) * 0.075 * (1 + T.era * 0.35) * (0.4 + T.happiness) * (1 + temples * 0.4) + T.villagers.filter((v) => v.action === 'pray' && v.state === 'work').length * 0.08;
 }
 
 function nextBuilding(T, pop, cap) {
@@ -905,9 +953,10 @@ function nextBuilding(T, pop, cap) {
   if (rocketTime) list.unshift('rocket');
   if (e >= 1 && !has('temple') && pop >= 5) list.push('temple');
   if (e >= 3 && countB('lamp') < Math.floor(T.buildings.length / 3)) list.push('lamp');
-  if (!list.length) return null;
+  const ok = list.filter((k) => !(T.skip && T.skip[k] > G.env.time));
+  if (!ok.length) return null;
   // build what we can afford now; otherwise aim for the most important
-  return list.find((k) => afford(BUILDINGS[k].cost)) || list[0];
+  return ok.find((k) => afford(BUILDINGS[k].cost)) || ok[0];
 }
 
 // ── wild ecosystem ─────────────────────────────────────────────────────────

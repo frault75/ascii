@@ -19,8 +19,15 @@ function word(s) {
   for (const ch of s) for (let r = 0; r < 6; r++) rows[r] += L[ch][r];
   return rows;
 }
-const LOGO = word('GENESIS.TXT');
-const LW = LOGO[0].length;
+const LOGO_WIDE = word('GENESIS.TXT');
+const LOGO_TALL = (() => {
+  const a = word('GENESIS'), b = word('.TXT');
+  const pad = ' '.repeat(Math.floor((a[0].length - b[0].length) / 2));
+  return [...a, ''.padEnd(a[0].length), ...b.map((r) => (pad + r).padEnd(a[0].length))];
+})();
+let LOGO = LOGO_WIDE;
+let LW = LOGO[0].length;
+let SPLIT = 99; // column where the white ".TXT" part starts
 
 const BOOT = [
   ['GENESIS BIOS v1.0.4   (c) 1979-2026 ASCII DYNAMICS', 0],
@@ -44,8 +51,13 @@ export class Intro {
   }
 
   layout(view) {
-    // choose a cell size that lets the logo breathe
+    // choose a cell size that lets the logo breathe; stack it on narrow screens
     const cssW = window.innerWidth;
+    const tall = cssW < 720;
+    LOGO = tall ? LOGO_TALL : LOGO_WIDE;
+    LW = LOGO[0].length;
+    SPLIT = tall ? 999 : 54;
+    this.tall = tall;
     const cell = clamp((cssW * 0.9) / LW, 3.2, 13);
     return { cellW: cell, cellH: cell * 1.6 };
   }
@@ -138,8 +150,9 @@ export class Intro {
       const lt = this.logoT;
       const lx = Math.floor((cols - LW) / 2);
       const ly = Math.max(1, Math.floor(rows * 0.2));
-      for (let r = 0; r < 6; r++) {
+      for (let r = 0; r < LOGO.length; r++) {
         const row = Array.from(LOGO[r]);
+        const white = r >= 7;
         for (let c = 0; c < row.length; c++) {
           const ch = row[c];
           if (ch === ' ') continue;
@@ -156,7 +169,7 @@ export class Intro {
           let cr, cg, cb;
           if (u < 0.5) { const k = u / 0.5; cr = 255; cg = 207 - k * 100; cb = 90 + k * 123; }
           else { const k = (u - 0.5) / 0.5; cr = 255 - k * 144; cg = 107 + k * 135; cb = 213 + k * 42; }
-          if (c >= 54) { cr = 236; cg = 230; cb = 218; }
+          if (c >= SPLIT || white) { cr = 236; cg = 230; cb = 218; }
           const sh = solid ? 1 : 0.42;
           const flick = p < 1 ? 1.6 : 1 + wave * 0.18;
           const glyph = p < 1 && hash2(c, Math.floor(lt * 20), 7) < 0.5 ? gs('01#$%&@')[Math.floor(hash2(c, r, Math.floor(lt * 30)) * 7)] : gi(ch);
@@ -166,7 +179,7 @@ export class Intro {
       // tagline typed under the logo
       const tag = t('tagline');
       const tn = Math.floor(clamp((lt - 2.1) * 30, 0, tag.length));
-      const ty = ly + 8;
+      const ty = ly + LOGO.length + 2;
       const tx = Math.floor((cols - tag.length) / 2);
       for (let i = 0; i < tn; i++) put(tx + i, ty, tag[i], 200, 205, 220, 0.12);
       if (lt > 2.1 && tn < tag.length) put(tx + tn, ty, '█', 255, 207, 90, 0.5);

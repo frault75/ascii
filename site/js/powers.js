@@ -60,7 +60,11 @@ export function useTool(id, cx, cy, r, held, drag) {
       }
       if (tt === E.EMPTY || (REPLACEABLE_GAS.has(tt) && KIND[el] !== K.GAS)) { putCell(i, el); n++; }
     });
-    if (n) { stat(el, n); emit('placed', el, n, cx, cy); }
+    if (n) {
+      stat(el, n);
+      if (el === E.WATER) W.water0 += n; // the player's water is part of the balance
+      emit('placed', el, n, cx, cy);
+    }
     return;
   }
 
@@ -136,7 +140,7 @@ export function useTool(id, cx, cy, r, held, drag) {
       break;
     }
     case 'cloud': case 'snowcloud': case 'storm': {
-      const flags = tl.special === 'storm' ? 3 : tl.special === 'snowcloud' ? 5 : 1;
+      const flags = (tl.special === 'storm' ? 3 : tl.special === 'snowcloud' ? 5 : 1) | 8;
       let n = 0;
       inBrush(cx, cy, r + 1, (x, y, i) => {
         if (t[i] === E.EMPTY && R() < 0.5) { putCell(i, E.CLOUD, 60 + R() * 60, flags); n++; }

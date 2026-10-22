@@ -116,6 +116,7 @@ export function wireEvents() {
     if (b.kind === 'rocket') { toast('achieve', t('b_rocket'), t('launch'), t('launchSub')); sfx('achieve'); }
     for (let k = 0; k < 10; k++) spawnFx({ x: b.x + Math.random() * b.w, y: b.y + Math.random() * b.h, vy: -0.05 - Math.random() * 0.05, life: 50, glyph: '✦', color: [255, 220, 150], glow: 0.8 });
   });
+  on('upgrade', (from, to) => logLine('⌂ ' + (fr() ? `La tribu remplace ${t('b_' + from)} par ${t('b_' + to)}.` : `The tribe replaces ${t('b_' + from)} with ${t('b_' + to)}.`), false, '#ffd27a'));
   on('collapse', (b) => { if (b.kind !== 'farm' && b.kind !== 'lamp') logLine('⌂ ' + t('logCollapse', t('b_' + b.kind)), true, '#ff8a6a'); });
   on('hunger', (n) => { if (n === 1 || n === 3) { logLine(t('logHunger'), true, '#ff8a6a'); hintOnce('hunger', fr() ? 'La tribu a faim : sème des fleurs, crée de l\'eau pour les poissons, ou utilise le miracle ABONDANCE.' : 'The tribe is hungry: sow flowers, add water for fish, or use the ABUNDANCE miracle.'); } });
   on('gold', (v) => { logLine('$ ' + t('logGold', v.name), false, '#ffd84a'); emit('discover', 'gold'); });
@@ -149,7 +150,8 @@ export function wireEvents() {
     G.shake = Math.max(G.shake, Math.min(2.5, r * 0.22));
     G.flash = Math.max(G.flash, Math.min(0.5, r * 0.04));
     G.flashColor = [1, 0.75, 0.45];
-    G.progress.stats.explosions++;
+    if (G.world.tick - (G.lastBoom || -99) > 40) G.progress.stats.explosions++;
+    G.lastBoom = G.world.tick;
     sfx('explosion', x, y);
     killNear(x, y, r * 1.1, 'boom');
   });
@@ -191,7 +193,10 @@ export function updateHints(dt) {
   hintClock += dt;
   const T = G.tribe, P = G.progress;
   if (!T || !P) return;
-  if (hintClock > 1.5) hintOnce('start', fr() ? 'CLIC GAUCHE : créer  ·  CLIC DROIT : déplacer la vue  ·  MOLETTE : zoom' : 'LEFT CLICK: create  ·  RIGHT CLICK: move the view  ·  WHEEL: zoom', 10000);
+  const touch = window.matchMedia && matchMedia('(pointer: coarse)').matches;
+  if (hintClock > 1.5) hintOnce('start', touch
+    ? (fr() ? 'UN DOIGT : créer  ·  DEUX DOIGTS : déplacer & zoomer' : 'ONE FINGER: create  ·  TWO FINGERS: move & zoom')
+    : (fr() ? 'CLIC GAUCHE : créer  ·  CLIC DROIT : déplacer la vue  ·  MOLETTE : zoom' : 'LEFT CLICK: create  ·  RIGHT CLICK: move the view  ·  WHEEL: zoom'), 10000);
   if (hintClock > 25 && T.wood < 3 && G.world.counts[E.WOOD] < 300) hintOnce('trees', fr() ? 'Ta tribu a besoin de bois : plante des ARBRES près du village (catégorie VIE).' : 'Your tribe needs wood: plant TREES near the village (LIFE category).');
   if (!isSandbox() && P.faith >= 15 && hintClock > 20) hintOnce('faith', fr() ? 'La FOI ◊ vient des prières de ta tribu. Les pouvoirs bordés de bleu sont déblocables.' : 'FAITH ◊ comes from your tribe\'s prayers. Powers outlined in blue can be unlocked.');
   if (G.env.night && hintClock > 10) hintOnce('night', fr() ? 'La nuit tombe : la tribu rentre dormir. Les lucioles sortent…' : 'Night falls: the tribe goes to sleep. Fireflies come out…');

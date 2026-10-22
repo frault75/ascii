@@ -112,7 +112,7 @@ for (let s = 0; s < N; s++) {
 
 // is this cell part of the ground for surface detection
 export const TERRAIN = new Uint8Array(N);
-for (const e of [E.BEDROCK, E.STONE, E.DIRT, E.GRASS, E.SAND, E.ICE, E.SNOW, E.OBSIDIAN, E.METAL, E.GOLD, E.GLASS, E.CRYSTAL, E.STARSTONE, E.ASH, E.GUNPOWDER, E.TNT, E.WORM, E.WATER, E.LAVA, E.ACID, E.OIL, E.EMBER])
+for (const e of [E.BEDROCK, E.STONE, E.DIRT, E.GRASS, E.SAND, E.ICE, E.SNOW, E.OBSIDIAN, E.METAL, E.GOLD, E.GLASS, E.CRYSTAL, E.STARSTONE, E.ASH, E.GUNPOWDER, E.TNT, E.WORM, E.WATER, E.LAVA, E.ACID, E.OIL])
   TERRAIN[e] = 1;
 
 // ── look-up tables for the renderer ─────────────────────────────────────────

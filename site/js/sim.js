@@ -247,7 +247,7 @@ export function electrify(i0) {
   const q = [i0];
   const seen = new Set([i0]);
   let n = 0;
-  while (q.length && n < 900) {
+  while (q.length && n < 260) {
     const i = q.shift();
     c[i] = 14;
     W.charged.push(i);
@@ -339,10 +339,14 @@ export function step() {
           if (liquid(i, type, 5)) break;
           // thin puddles soak into the soil, keeping the water cycle in balance
           const bw = t[i + w];
-          if ((bw === E.DIRT || bw === E.GRASS || bw === E.SAND || bw === E.SNOW) && t[i - w] !== E.WATER && R() < 0.006) { clear(i); break; }
+          if ((bw === E.DIRT || bw === E.GRASS || bw === E.SAND || bw === E.SNOW) && y < W.sea - 1 && R() < (t[i - w] !== E.WATER ? 0.008 : 0.0012)) { clear(i); break; }
           if (t[i - w] === 0) {
             if (env.temp < -1 && R() < 0.0004) { t[i] = E.ICE; disc('ice', i); }
-            else if (env.evap > 0 && R() < 0.00004 * env.evap) put(i, E.STEAM, 120 + R() * 100);
+            else if (R() < 0.00004 * env.evap + W.excess) {
+              // evaporation keeps oceans from creeping up over the land
+              clear(i);
+              if (R() < 0.15) spawnFx({ x, y: y - 1, vy: -0.04, life: 50, glyph: '°', color: [200, 220, 240] });
+            }
           }
           break;
         }
@@ -448,6 +452,8 @@ export function step() {
             // mountain tops stay frozen
             const lt = env.temp - Math.max(0, W.sea - 24 - y) * 1.5;
             if (lt > 2 && R() < 0.0012 * (lt / 10)) put(i, E.WATER);
+            // thick drifts slowly settle so snowfall stays a blanket, not a dune
+            else if (t[i - w] === 0 && t[i + w] === E.SNOW && t[i + 2 * w] === E.SNOW && R() < 0.0015) clear(i);
           }
           const tj = t[i + N4[(R() * 4) | 0]];
           if (HOT[tj] || (tj === E.WATER && y > W.sea - 24 && R() < 0.05)) { put(i, E.WATER); disc('melt', i); }
@@ -459,7 +465,7 @@ export function step() {
           const tj = t[j];
           if (HOT[tj] && R() < 0.2) { put(i, E.WATER); disc('melt', i); break; }
           if (env.temp > 3 && (tj === 0 || tj === E.WATER) && R() < 0.0008) { put(i, E.WATER); break; }
-          if (env.temp < -2 && tj === E.WATER && (t[j - w] === 0 || t[j - w] === E.ICE) && R() < 0.003) put(j, E.ICE);
+          if (env.temp < -2 && tj === E.WATER && (t[j - w] === 0 || (t[j - w] === E.ICE && t[j - 2 * w] === 0)) && R() < 0.003) put(j, E.ICE);
           break;
         }
 
@@ -551,12 +557,15 @@ export function step() {
 
         case E.CLOUD: {
           const fl = a[i];
-          const raining = (fl & 1) || env.raining;
+          const own = fl & 1;
+          const raining = own || (env.raining && env.rainBudget > 0);
           if (raining && d[i] > 0 && t[i + w] === 0 && R() < env.rainRate) {
-            put(i + w, env.temp < 0 || fl & 4 ? E.SNOW : E.WATER, 0, 0);
-            d[i]--;
+            const snow = env.temp < 0 || fl & 4;
+            put(i + w, snow ? E.SNOW : E.WATER, 0, 0);
+            if (own) { d[i]--; if (fl & 8 && !snow) W.water0 += 0.5; }
+            else env.rainBudget -= snow ? 3 : 1;
           }
-          if (((fl & 2) || env.storm) && R() < 0.000015 * (env.storm ? 2 : 1)) strike(x, y + 1);
+          if ((fl & 2) && (own || env.storm) && R() < 0.0000018) strike(x, y + 1);
           if (d[i] === 0 && R() < 0.003) clear(i);
           else if (!raining && !(fl & 1) && env.clear && R() < 0.0006) clear(i);
           break;
@@ -625,6 +634,11 @@ export function step() {
     }
   }
   if ((tick & 31) === 0) W.computeSurface();
+  // global water balance: the more surplus water, the faster it evaporates
+  if ((tick & 127) === 0) {
+    if (!W.water0) W.water0 = Math.max(1500, counts[E.WATER]);
+    W.excess = Math.max(0, Math.min(0.004, (counts[E.WATER] / W.water0 - 1.1) * 0.003));
+  }
 }
 
 // ── plants ─────────────────────────────────────────────────────────────────

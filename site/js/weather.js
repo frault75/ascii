@@ -16,7 +16,7 @@ export function createEnv(time = DAY * 0.29) {
     tod: 0, day: 0, year: 1, season: 0, seasonT: 0,
     daylight: 1, night: false, sunElev: 1,
     temp: 12, grow: 1, evap: 0,
-    weather: 'clear', weatherTimer: DAY * 0.2,
+    weather: 'clear', weatherTimer: DAY * 0.2, rainBudget: 0,
     raining: false, storm: false, clear: true, cover: 0.1, rainRate: 0.025,
     wind: 0.1, windTarget: 0.2, cloudAcc: 0,
     cloudLine: 30,
@@ -57,6 +57,7 @@ export function updateEnv(dt = 1) {
 
   // weather state machine
   env.weatherTimer -= dt;
+  if (env.raining && env.rainBudget <= 0 && env.weatherTimer > 900) env.weatherTimer = 900;
   if (env.weatherTimer <= 0) {
     env.weatherTimer = DAY * (0.12 + Math.random() * 0.25);
     nextWeather(env);
@@ -99,7 +100,10 @@ function nextWeather(env) {
     env.rainbow = 1;
     emit('rainbow');
   }
-  if (env.weather !== prev) emit('weather', env.weather, prev);
+  if (env.weather !== prev) {
+    if (env.weather === 'rain' || env.weather === 'storm') env.rainBudget = env.weather === 'storm' ? 1500 : 800;
+    emit('weather', env.weather, prev);
+  }
 }
 
 export function forceWeather(kind) {
@@ -107,6 +111,7 @@ export function forceWeather(kind) {
   const prev = env.weather;
   env.weather = kind;
   env.weatherTimer = DAY * 0.2;
+  if (kind === 'rain' || kind === 'storm') env.rainBudget = kind === 'storm' ? 1500 : 800;
   if (kind !== prev) emit('weather', kind, prev);
 }
 

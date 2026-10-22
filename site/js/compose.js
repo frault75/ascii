@@ -112,6 +112,39 @@ export function compose(view, time) {
     shoot.push({ x: Math.random() * cols, y: Math.random() * horRow * 0.5, vx: (Math.random() < 0.5 ? -1 : 1) * (25 + Math.random() * 25), vy: 8 + Math.random() * 8, life: 0.6 + Math.random() * 0.5 });
   }
 
+  // falling water (rain, waterfalls in mid-air): flag per visible cell, bottom-up
+  const nCells = cols * rows;
+  if (!view.fall || view.fall.length < nCells) view.fall = new Uint8Array(nCells + 4096);
+  const fallF = view.fall;
+  for (let vx = 0; vx < cols; vx++) {
+    const wx = ox + vx;
+    let below = 0;
+    if (wx < 1 || wx >= w - 1) { for (let vy = 0; vy < rows; vy++) fallF[vy * cols + vx] = 0; continue; }
+    {
+      // seed from the cell just under the viewport
+      let y = oy + rows;
+      let f = 0;
+      if (y < h - 1) {
+        let yy = y;
+        while (yy < h - 1 && t[yy * w + wx] === E.WATER) yy++;
+        const tb = t[yy * w + wx];
+        f = yy > y && (tb === 0 || tb === E.CLOUD) ? 1 : 0;
+        below = t[y * w + wx] === E.WATER ? f : 0;
+        if (t[y * w + wx] === 0 || t[y * w + wx] === E.CLOUD) below = 2;
+      }
+    }
+    for (let vy = rows - 1; vy >= 0; vy--) {
+      const wy = oy + vy;
+      let f = 0;
+      if (wy > 0 && wy < h - 1) {
+        const tt = t[wy * w + wx];
+        if (tt === E.WATER) f = below >= 1 ? 1 : 0;
+        below = tt === E.WATER ? f : tt === 0 || tt === E.CLOUD ? 2 : 0;
+      }
+      fallF[vy * cols + vx] = f;
+    }
+  }
+
   // water depth per column (count water above viewport top)
   const run = view.run || (view.run = new Int16Array(4096));
   for (let vx = 0; vx < cols; vx++) {
@@ -148,16 +181,18 @@ export function compose(view, time) {
       const i = wy * w + wx;
       let tt = t[i];
       const above = wy < surf[wx];
+      const skyBack = wy <= surf[wx];
       if (tt === E.BEDROCK && above) tt = 0;
-      if (tt === E.WATER || tt === E.FISH) run[vx]++;
+      const falling = fallF[vy * cols + vx] === 1;
+      if (tt === E.FISH || (tt === E.WATER && !falling)) run[vx]++;
       else run[vx] = 0;
 
       // ── backdrop (sky / cave) ──
       let br, bgc, bb, bgl = g.space, bfr = 0, bfg = 0, bfb = 0, bself = SELF, sky = 0, bem = 0;
       const mix = tt === 0 ? 1 : MIX[tt];
       {
-        if (above) {
-          br = sr; bgc = sg; bb = sb; sky = 255;
+        if (skyBack) {
+          br = sr; bgc = sg; bb = sb; sky = above ? 255 : 0;
           // stars
           if (starAmt > 0.01) {
             const hs = hash2(vx + Math.floor(view.camX * 0.04), vy + Math.floor(view.camY * 0.04), 7);
@@ -319,9 +354,8 @@ export function compose(view, time) {
             gl = a[i] & 1 ? g.fishR : g.fishL;
             break;
           }
-          if (depth <= 1) {
-            const below = t[i + w];
-            if (below === 0 || below === E.CLOUD) {
+          if (falling || depth <= 1) {
+            if (falling) {
               // falling drop
               gl = g.rain[(vv + frame) & 3];
               vcount[64 + E.WATER]++;
@@ -356,14 +390,14 @@ export function compose(view, time) {
           const life = d[i] / 60;
           gl = g.fire[(vv + frame + (i & 7)) % 7];
           fr = 255; fgc = 120 + Math.min(1, life) * 130; fb = 40 + Math.min(1, life) * 80;
-          r2 = br * 0.6 + 80; g2 = bgc * 0.6 + 20; b2 = bb * 0.6;
+          r2 = br * 0.82 + 34; g2 = bgc * 0.82 + 8; b2 = bb * 0.82;
           if (!above) { r2 = 60; g2 = 18; b2 = 6; }
           self = SELF;
           skyC = sky;
           break;
         }
         case E.SMOKE: case E.STEAM: {
-          const k = Math.min(1, d[i] / 80) * (1 - MIX[tt] * 0.6);
+          const k = Math.min(1, d[i] / 90) * (tt === E.SMOKE ? 0.32 : 0.22);
           r2 = br + (r2 - br) * k; g2 = bgc + (g2 - bgc) * k; b2 = bb + (b2 - bb) * k;
           const kk = Math.min(1, d[i] / 50);
           fr = r2 + (fr - r2) * kk; fgc = g2 + (fgc - g2) * kk; fb = b2 + (fb - b2) * kk;
@@ -417,7 +451,7 @@ export function compose(view, time) {
             r2 = br; g2 = bgc; b2 = bb; self = above ? SELF_BG : 0; skyC = sky;
           } else if (t[i - w] === 0 || t[i - w] === E.CLOUD) {
             gl = g.lower; fr = 240; fgc = 244; fb = 252;
-            if (above) { r2 = br; g2 = bgc; b2 = bb; self = SELF_BG; skyC = sky; } else { r2 = 12; g2 = 11; b2 = 16; }
+            if (skyBack) { r2 = br; g2 = bgc; b2 = bb; self = SELF_BG; } else { r2 = 12; g2 = 11; b2 = 16; }
           }
           break;
         case E.CLOUD: {

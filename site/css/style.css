@@ -272,9 +272,12 @@ pre.help { margin: 0; white-space: pre-wrap; font: inherit; font-size: 11px; col
   #left { top: auto; bottom: 150px; width: calc(100vw - 12px); left: 6px; }
   #log { display: none; }
   #quest { padding: 6px 9px; }
-  #side { top: 150px; right: 6px; width: 150px; }
+  #side { top: 138px; right: 6px; width: 176px; }
   #minimap { display: none; }
-  #nav { grid-template-columns: repeat(2, 1fr); }
+  #nav { grid-template-columns: repeat(4, 1fr); gap: 4px; }
+  .nb { font-size: 0; padding: 5px 0; }
+  .nb .g { font-size: 15px; margin: 0; }
+  #reveal { padding: 7px 9px; }
   #dock { bottom: 6px; padding: 6px; width: calc(100vw - 12px); }
   #cats { overflow-x: auto; scrollbar-width: none; }
   #ctl { display: none; }
@@ -285,5 +288,5 @@ pre.help { margin: 0; white-space: pre-wrap; font: inherit; font-size: 11px; col
   #hover { display: none; }
   #toasts { top: 140px; }
   .toast { min-width: 240px; }
-  #hint { bottom: 150px; }
+  #hint { display: none; }
 }

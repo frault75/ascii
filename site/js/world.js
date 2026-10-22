@@ -1,5 +1,5 @@
 // ─── world.js ── the cell grid ─────────────────────────────────────────────
-import { E, TERRAIN } from './elements.js';
+import { E, TERRAIN, KIND, K } from './elements.js';
 
 export class World {
   constructor(w, h, seed) {
@@ -22,6 +22,8 @@ export class World {
     this.booms = [];
     this.volcano = null;
     this.sea = 0;
+    this.water0 = 0;
+    this.excess = 0;
   }
   idx(x, y) {
     return y * this.w + x;
@@ -45,7 +47,21 @@ export class World {
     const { t, w, h, surf } = this;
     for (let x = Math.max(0, x0); x < Math.min(w, x1); x++) {
       let y = 1;
-      while (y < h - 1 && !TERRAIN[t[y * w + x]]) y++;
+      for (; y < h - 1; y++) {
+        const tt = t[y * w + x];
+        if (!TERRAIN[tt]) continue;
+        // falling grains and raindrops are not ground
+        const k = KIND[tt];
+        if (k === K.POWDER || k === K.LIQUID) {
+          // follow the run of loose matter: if it ends in air it is still falling
+          let yy = y + 1;
+          while (yy < h - 1 && (KIND[t[yy * w + x]] === K.POWDER || KIND[t[yy * w + x]] === K.LIQUID)) yy++;
+          const b = t[yy * w + x];
+          // falling, or resting on a tree / building rather than the ground
+          if (b === E.EMPTY || KIND[b] === K.GAS || b === E.CLOUD || !TERRAIN[b]) { y = yy - 1; continue; }
+        }
+        break;
+      }
       surf[x] = y;
     }
   }
