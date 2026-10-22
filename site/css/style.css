@@ -1,5 +1,6 @@
 /* ─── GENESIS.TXT ── interface ─────────────────────────────────────────── */
 :root {
+  color-scheme: dark;
   --bg: #05070c;
   --ink: #ece6da;
   --dim: #8b90a0;

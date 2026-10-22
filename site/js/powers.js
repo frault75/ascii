@@ -106,7 +106,8 @@ export function useTool(id, cx, cy, r, held, drag) {
     }
     case 'spark': {
       if (held) break;
-      if (!spend(tl.use)) { emit('broke'); break; }
+      // a dead world always gets its spark back for free
+      if (G.tribe.villagers.length && !spend(tl.use)) { emit('broke'); break; }
       const g = groundBelow(cx, cy) || { x: cx, y: cy };
       const T = G.tribe;
       if (!T.villagers.length && !T.buildings.length) { foundTribe(g.x); emit('sparked', g.x, g.y); break; }

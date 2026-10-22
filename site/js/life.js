@@ -121,7 +121,11 @@ export function findSpawnSite() {
       if (cx < 1 || cx >= w.w - 1) continue;
       for (let y = w.surf[cx] - 12; y < w.surf[cx]; y++) if (y > 0 && w.t[y * w.w + cx] === E.WOOD) { trees++; break; }
     }
-    score += flat * 1.5 - wet * 4 + Math.min(trees, 8) * 3 - Math.abs(x - mid) * 0.04 + (b === 0 || b === 1 ? 5 : 0) - (sy < w.sea - 26 ? 15 : 0);
+    // basins collect rain: penalise sites lower than ground on both sides
+    let hiL = 1e9, hiR = 1e9;
+    for (let k = 4; k <= 40; k++) { if (x - k > 0) hiL = Math.min(hiL, w.surf[x - k]); if (x + k < w.w - 1) hiR = Math.min(hiR, w.surf[x + k]); }
+    const basin = Math.max(0, sy - Math.max(hiL, hiR));
+    score += flat * 1.5 - wet * 4 + Math.min(trees, 8) * 3 - Math.abs(x - mid) * 0.04 + (b === 0 || b === 1 ? 5 : 0) - (sy < w.sea - 26 ? 15 : 0) - basin * 3 - (x < 40 || x > w.w - 40 ? 10 : 0);
     if (score > bestScore) { bestScore = score; best = x; }
   }
   return best ?? Math.floor(mid);
@@ -142,10 +146,10 @@ export function foundTribe(x) {
 
 // ── buildings ──────────────────────────────────────────────────────────────
 const SOFT = new Set([E.DIRT, E.GRASS, E.SAND, E.SNOW, E.ASH, E.SEED]);
-const CLEAR = new Set([E.EMPTY, E.PLANT, E.FLOWER, E.SNOW, E.SEED, E.ASH, E.SMOKE, E.STEAM, E.BIRD, E.BUTTERFLY, E.FIREFLY, E.LEAF]);
+const CLEAR = new Set([E.EMPTY, E.PLANT, E.FLOWER, E.SNOW, E.SEED, E.ASH, E.SMOKE, E.STEAM, E.BIRD, E.BUTTERFLY, E.FIREFLY, E.LEAF, E.WOOD, E.SAPLING]);
 
 // find a spot; builders level the ground (dig soft soil, fill small gaps)
-function findSite(kind, cx, radius = 90) {
+function findSite(kind, cx, radius = 90, ignoreId = 0) {
   const B = BUILDINGS[kind];
   const bw = B.rows[0].length, bh = B.rows.length;
   const w = W();
@@ -159,13 +163,14 @@ function findSite(kind, cx, radius = 90) {
       for (let c = 0; c < bw && ok; c++) {
         const x = x0 + c;
         let y = Math.max(2, w.surf[x] - 24);
-        while (y < w.h - 2 && !STAND[t[y * w.w + x]]) {
+        const ign = (yy) => (ignoreId && t[yy * w.w + x] === E.STRUCT && w.a[yy * w.w + x] === ignoreId) || t[yy * w.w + x] === E.WOOD;
+        while (y < w.h - 2 && (!STAND[t[y * w.w + x]] || ign(y))) {
           const q = t[y * w.w + x];
           if (q === E.WATER || q === E.LAVA || q === E.ACID || q === E.OIL) { ok = false; break; }
           y++;
         }
         const g = t[y * w.w + x];
-        if (g === E.STRUCT || g === E.WOOD || g === E.ICE || g === E.TNT) ok = false;
+        if (g === E.STRUCT || g === E.ICE || g === E.TNT) ok = false;
         gy[c] = y;
         sum += y;
       }
@@ -182,7 +187,7 @@ function findSite(kind, cx, radius = 90) {
         for (let xx = x0 - 1; xx <= x0 + bw && ok; xx++) {
           const tt = t[yy * w.w + xx];
           const inside = xx >= x0 && xx < x0 + bw;
-          if (CLEAR.has(tt)) continue;
+          if (CLEAR.has(tt) || (ignoreId && tt === E.STRUCT && w.a[yy * w.w + xx] === ignoreId)) continue;
           if (inside && SOFT.has(tt) && yy >= Y - 2) continue;
           if (!inside && yy >= Y - 2 && STAND[tt]) continue;
           ok = false;
@@ -190,6 +195,7 @@ function findSite(kind, cx, radius = 90) {
       }
       if (!ok) continue;
       for (const b of G.tribe.buildings) {
+        if (b.id === ignoreId) continue;
         if (x0 < b.x + b.w + 1 && x0 + bw + 1 > b.x && top < b.y + b.h + 2 && Y > b.y - 2) { ok = false; break; }
       }
       if (ok) return { x: x0, y: Y - 1, groundY: Y, bw, bh };
@@ -206,10 +212,12 @@ export function placeBuilding(kind, x0, bottomY) {
   const id = T.nextB++;
   let cells = 0;
   // level the ground: clear the footprint, then lay foundations
+  let timber = 0;
   for (let c = 0; c < bw; c++) {
-    for (let y = bottomY - bh + 1; y <= bottomY; y++) {
+    for (let y = bottomY - bh - 1; y <= bottomY; y++) {
       const i = y * w.w + x0 + c;
-      if (w.t[i] !== E.EMPTY) { w.t[i] = E.EMPTY; w.d[i] = 0; w.a[i] = 0; }
+      if (w.t[i] === E.WOOD || w.t[i] === E.SAPLING) { timber++; w.t[i] = E.EMPTY; w.a[i] = 0; continue; }
+      if (y >= bottomY - bh + 1 && w.t[i] !== E.EMPTY) { w.t[i] = E.EMPTY; w.d[i] = 0; w.a[i] = 0; }
     }
     for (let y = bottomY + 1; y < bottomY + 5; y++) {
       const i = y * w.w + x0 + c;
@@ -234,6 +242,7 @@ export function placeBuilding(kind, x0, bottomY) {
       cells++;
     }
   }
+  if (timber) T.wood += Math.ceil(timber / 3);
   const b = { id, kind, x: x0, y: bottomY - (bh - 1), w: bw, h: bh, cells, built: G.env.day };
   T.buildings.push(b);
   emit('built', b);
@@ -356,23 +365,38 @@ function tryStep(v, dir) {
   const nx = v.x + dir;
   if (nx < 3 || nx > w.w - 4) return false;
   const c1 = t[v.y * w.w + nx];
+  const walking = v.state === 'walk';
+  const swimIn = (c1 === E.WATER || c1 === E.FISH) && walking && Math.abs(v.tx - v.x) > 2;
   const shallow = (c1 === E.WATER) && STAND[t[(v.y + 1) * w.w + nx]];
-  if (canOccupy(c1) || shallow) {
+  if (canOccupy(c1) || shallow || swimIn) {
     let drop = 0, bottom = 0;
-    for (let k = 1; k <= 7; k++) {
+    for (let k = 1; k <= 12; k++) {
       bottom = t[(v.y + k) * w.w + nx];
       if (STAND[bottom] || !PASS[bottom] || AVOID.has(bottom)) break;
       drop++;
     }
-    if (drop >= (v.state === 'flee' ? 9 : 5) || AVOID.has(bottom) || DEADLY[bottom]) return false;
+    if (DEADLY[bottom] || bottom === E.LAVA || bottom === E.ACID || bottom === E.OIL) return false;
+    if (drop >= (v.state === 'flee' ? 9 : 5)) {
+      // careful descent towards a lower destination
+      if (walking && v.ty > v.y + 2) { v.x = nx; v.descend = true; return true; }
+      if (bottom === E.WATER && walking && drop < 10) { v.x = nx; v.descend = true; return true; }
+      return false;
+    }
+    if (bottom === E.WATER && !swimIn && !shallow) return false;
     v.x = nx;
     return true;
   }
   if (v.y > 3) {
     const up = t[(v.y - 1) * w.w + nx], upHere = t[(v.y - 1) * w.w + v.x];
-    if (canOccupy(up) && canOccupy(upHere)) { v.x = nx; v.y -= 1; return true; }
+    if (canOccupy(up) && canOccupy(upHere)) { v.x = nx; v.y -= 1; v.climb = 0; return true; }
     const up2 = t[(v.y - 2) * w.w + nx], up2Here = t[(v.y - 2) * w.w + v.x];
-    if (!canOccupy(up) && canOccupy(up2) && canOccupy(upHere) && canOccupy(up2Here)) { v.x = nx; v.y -= 2; return true; }
+    if (!canOccupy(up) && canOccupy(up2) && canOccupy(upHere) && canOccupy(up2Here)) { v.x = nx; v.y -= 2; v.climb = 0; return true; }
+    // scale the wall when the destination lies beyond it
+    if (walking && canOccupy(upHere) && (v.climb || 0) < 10 && Math.abs(v.tx - v.x) > 1) {
+      v.y -= 1;
+      v.climb = (v.climb || 0) + 1;
+      return true;
+    }
   }
   return false;
 }
@@ -457,11 +481,10 @@ function assign(v) {
       T.blocked = (T.blocked || 0) + 1;
       // no free land: replace the oldest, humblest dwelling with a better one
       const up = TIER[kind] ? oldestBelow(TIER[kind]) : null;
-      if (up) {
-        const cx = up.x + (up.w >> 1);
+      const s2 = up ? findSite(kind, up.x + (up.w >> 1), 10, up.id) : null;
+      if (s2) {
         demolish(up);
-        const s2 = findSite(kind, cx, 8);
-        if (s2) {
+        {
           pay(BUILDINGS[kind].cost);
           v.site = { kind, ...s2 };
           T.building = null;
@@ -695,7 +718,7 @@ export function updateLife() {
     }
     const wet = here === E.WATER || here === E.OIL || here === E.FISH;
     const below0 = t[i + w.w];
-    if (wet) v.fall = 0;
+    if (wet) { v.fall = 0; v.descend = false; v.climb = 0; }
     if (wet && !STAND[below0]) {
       // swimming: rise to the surface, then paddle towards the shore
       const up = t[i - w.w];
@@ -717,18 +740,25 @@ export function updateLife() {
       continue;
     }
     if (v.breath < 240) v.breath++;
-    // gravity
+    // gravity (climbers cling to the wall, descenders lower themselves)
     const below = t[i + w.w];
     if (!STAND[below]) {
-      if (PASS[below] || KIND[below] === K.LIQUID || DEADLY[below]) {
+      const clinging = v.climb > 0 && !PASS[t[i + v.dir]] && v.state === 'walk';
+      if (!clinging && (PASS[below] || KIND[below] === K.LIQUID || DEADLY[below])) {
+        if (v.descend) { if ((tick & 1) === 0) v.y++; continue; }
         v.y++;
         v.fall++;
         continue;
       }
-    } else if (v.fall > 0) {
-      if (v.fall > 14) { kill(v, 'fall'); continue; }
-      if (v.fall > 6) say(v, L('aïe', 'ouch'), 60);
-      v.fall = 0;
+      if (!clinging) v.climb = 0;
+    } else {
+      v.climb = 0;
+      v.descend = false;
+      if (v.fall > 0) {
+        if (v.fall > 14) { kill(v, 'fall'); continue; }
+        if (v.fall > 6) say(v, L('aïe', 'ouch'), 60);
+        v.fall = 0;
+      }
     }
     // danger sense
     if (--v.dangerT <= 0) {

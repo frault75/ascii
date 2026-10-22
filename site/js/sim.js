@@ -339,7 +339,7 @@ export function step() {
           if (liquid(i, type, 5)) break;
           // thin puddles soak into the soil, keeping the water cycle in balance
           const bw = t[i + w];
-          if ((bw === E.DIRT || bw === E.GRASS || bw === E.SAND || bw === E.SNOW) && y < W.sea - 1 && R() < (t[i - w] !== E.WATER ? 0.008 : 0.0012)) { clear(i); break; }
+          if ((bw === E.DIRT || bw === E.GRASS || bw === E.SAND || bw === E.SNOW) && y < W.sea - 1 && R() < (t[i - w] !== E.WATER ? 0.008 : 0.0025)) { clear(i); break; }
           if (t[i - w] === 0) {
             if (env.temp < -1 && R() < 0.0004) { t[i] = E.ICE; disc('ice', i); }
             else if (R() < 0.00004 * env.evap + W.excess) {

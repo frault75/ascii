@@ -74,7 +74,7 @@ const S = {
   logEclipse: ['Le soleil s\'éteint… éclipse !', 'The sun goes dark… eclipse!'],
   logRainbow: ['Un arc-en-ciel apparaît.', 'A rainbow appears.'],
   logMigration: ['Une nuée d\'oiseaux migre.', 'A flock of birds migrates.'],
-  logExtinct: ['Il n\'y a plus personne. Le monde attend une étincelle.', 'No one is left. The world awaits a spark.'],
+  logExtinct: ['Il n\'y a plus personne. Le monde attend une étincelle (VIE → Étincelle, gratuite).', 'No one is left. The world awaits a spark (LIFE → Spark, free).'],
   cause_fire: ['dans les flammes', 'in the flames'], cause_lava: ['dans la lave', 'in lava'], cause_acid: ['dissous·e dans l\'acide', 'dissolved in acid'],
   cause_zap: ['foudroyé·e', 'struck by lightning'], cause_glitch: ['effacé·e par le glitch', 'erased by the glitch'], cause_drown: ['noyé·e', 'by drowning'],
   cause_fall: ['d\'une chute', 'from a fall'], cause_starve: ['de faim', 'of hunger'], cause_buried: ['enseveli·e', 'buried alive'], cause_old: ['de vieillesse', 'of old age'],

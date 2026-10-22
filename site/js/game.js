@@ -172,8 +172,11 @@ export function wireEvents() {
   on('action', (a) => {
     if (a === 'export') exportTxt();
     else if (a === 'photo') photo();
-    else if (a === 'new') { if (confirm(t('confirmNew'))) { clearSave(); G.noSave = true; location.reload(); } }
-    else if (a === 'reset') { if (confirm(t('confirmReset'))) { clearSave(); G.noSave = true; location.reload(); } }
+    else if (a === 'new' || a === 'reset') {
+      // two-step confirmation inside the page (no native dialogs)
+      if (G.armed === a && performance.now() - G.armedAt < 4000) { clearSave(); G.noSave = true; location.reload(); }
+      else { G.armed = a; G.armedAt = performance.now(); toast('warn', '', t(a === 'new' ? 'confirmNew' : 'confirmReset'), fr() ? 'clique encore pour confirmer' : 'click again to confirm'); }
+    }
     else if (a === 'launch') launch();
   });
   on('userInput', () => { G.idleT = 0; });
