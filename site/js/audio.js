@@ -216,6 +216,7 @@ export class Sound {
         break;
       case 'miracle': [0, 7, 12].forEach((n, i) => this.tone(midi(79 + n), 1.2, { type: 'sine', vol: 0.06, delay: i * 0.12, echo: 0.5, verb: 0.7 })); break;
       case 'glitch': this.tone(80 + R() * 800, 0.12, { type: 'square', vol: 0.05 * k, verb: 0 }); break;
+      case 'type': this.tone(1800 + R() * 600, 0.015, { type: 'square', vol: 0.012, verb: 0 }); break;
       case 'splash': this.burst(0.3, { vol: 0.08 * k, type: 'bandpass', from: 1500, to: 400, q: 1.5 }); break;
     }
   }
@@ -248,6 +249,18 @@ export class Sound {
     if (!env.night && (vc[E.BIRD] || 0) > 0 && !underground && Math.random() < 0.05 + vc[E.BIRD] * 0.01) this.chirp();
     if (env.night && env.season < 3 && !underground && Math.random() < 0.18) this.cricket();
     this.musicTick(t);
+  }
+
+  // a tiny babbling voice, pitched per villager
+  voice(v, x, y) {
+    if (!this.ready || G.settings.muted) return;
+    const k = this.near(x, y);
+    if (k < 0.15) return;
+    const base = 300 + ((v.id * 97) % 9) * 45 + (v.kid ? 220 : 0);
+    const n = 3 + ((Math.random() * 4) | 0);
+    for (let i = 0; i < n; i++) {
+      this.tone(base * (0.85 + Math.random() * 0.4), 0.05, { type: 'square', vol: 0.018 * k, delay: i * 0.065, verb: 0.1 });
+    }
   }
 
   chirp() {

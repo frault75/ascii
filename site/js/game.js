@@ -11,7 +11,8 @@ import { createProgress, DISCOVERIES, spend, LAUNCH_COST, isSandbox, TOOL } from
 import { setFxPut, spawnFx, floatText } from './fx.js';
 import { overlayGlyph, overlayText, tintCell } from './compose.js';
 import { loadGame, saveGame, clearSave, saveSettings } from './save.js';
-import { toast, logLine, banner, hint, UI, refreshTools, togglePanel } from './ui.js';
+import { toast, logLine, banner, hint, UI, refreshTools, togglePanel, showTransmission } from './ui.js';
+import { welcomeBack } from './voices.js';
 import { IN } from './input.js';
 import { fmt } from './util.js';
 
@@ -31,7 +32,7 @@ export function newGame(mode, onProgress) {
   if (mode === 'sandbox') G.progress.faith = 0;
   const x = findSpawnSite();
   foundTribe(x);
-  G.cam.zoom = window.innerWidth < 760 ? 0.9 : 1.3;
+  G.cam.zoom = window.innerWidth < 760 ? 1.05 : 1.6;
   G.cam.x = x - window.innerWidth / (10 * G.cam.zoom) / 2;
   G.cam.y = W.surf[x] - window.innerHeight / (16 * G.cam.zoom) * 0.62;
   G.view.camY0 = W.sea - 38;
@@ -65,6 +66,7 @@ export function resumeGame() {
       G.progress.totalFaith += gain;
       const hh = Math.floor(away / 3600), mm = Math.floor((away % 3600) / 60);
       G.awayMsg = [t('welcomeBack') + ` (${hh}h${String(mm).padStart(2, '0')})`, `${t('prayed')} : +${fmt(gain)} ◊`];
+      if (away > 1800) welcomeBack(away / 3600);
     }
   }
   return true;
@@ -180,6 +182,10 @@ export function wireEvents() {
     else if (a === 'launch') launch();
   });
   on('userInput', () => { G.idleT = 0; });
+  on('voice', (v) => { if (G.audio && G.audio.ready) G.audio.voice(v, v.x, v.y); });
+  on('transmission', (m) => { showTransmission(m); logLine('◉ ' + m.v.name + ' : « ' + (m.gloss || m.text) + ' »', true, `rgb(${m.v.color})`); });
+  on('requestDone', (a, reward) => { toast('quest', fr() ? 'DEMANDE EXAUCÉE' : 'REQUEST FULFILLED', a.name.toUpperCase(), fr() ? 'la tribu te remercie' : 'the tribe thanks you', isSandbox() ? '' : `+${reward} ◊`); sfx('achieve'); logLine('✓ ' + (fr() ? `Tu as exaucé la demande de ${a.name}.` : `You granted ${a.name}'s request.`), true, '#8dff9a'); });
+  on('requestFailed', (a) => logLine('✗ ' + (fr() ? `${a.name} a attendu en vain.` : `${a.name} waited in vain.`), true, '#ff8a6a'));
 }
 
 function killNear(x, y, r, cause) {
@@ -208,13 +214,32 @@ export function updateHints(dt) {
 
 // ── overlays drawn on top of the world each frame ─────────────────────────
 const CARRY = { wood: ['≡', [190, 140, 80]], food: ['♣', [140, 230, 120]], stone: ['▪', [190, 190, 200]], metal: ['◆', [140, 230, 255]] };
-const G_SMILE = gi('☺'), G_KID = gi('o'), G_Z = gi('z'), G_MARK = gi('▼'), G_PRAY = gi('☻');
+const GL = {
+  face: gi('☺'), old: gi('☻'), kid: gi('ö'), z: gi('z'), mark: gi('▼'),
+  stand: gi('Λ'), stride: gi('λ'), arms: gi('Ж'), robe: gi('Π'), lie: gi('▬'),
+};
+const SKIN0 = [241, 194, 125];
+
+// write one villager cell: glyph over a darkened backdrop so it pops
+function vcell(view, x, y, glyph, c, glow) {
+  const R = G.renderer;
+  const vx = x - view.ox, vy = y - view.oy;
+  if (vx < 0 || vy < 0 || vx >= R.cols || vy >= R.rows) return;
+  const o = (vy * R.cols + vx) * 4;
+  const { fg, bg, em } = R;
+  fg[o] = c[0]; fg[o + 1] = c[1]; fg[o + 2] = c[2]; fg[o + 3] = glyph;
+  bg[o + 3] = (bg[o + 3] & 15) | (11 << 4);
+  bg[o] *= 0.45; bg[o + 1] *= 0.45; bg[o + 2] *= 0.5;
+  if (glow) { em[o] = Math.min(255, em[o] + c[0] * glow); em[o + 1] = Math.min(255, em[o + 1] + c[1] * glow); em[o + 2] = Math.min(255, em[o + 2] + c[2] * glow); }
+}
+function openCell(W, x, y) {
+  if (y < 1) return false;
+  const tt = W.t[y * W.w + x];
+  return tt === E.EMPTY || tt === E.STRUCT || tt === E.LEAF || tt === E.PLANT || tt === E.FLOWER || tt === E.WOOD || tt === E.SMOKE || tt === E.STEAM || tt === E.SNOW || tt === E.TORCH || tt === E.CROP;
+}
 
 export function drawOverlays(view, time) {
   const W = G.world, T = G.tribe;
-  const R = G.renderer;
-  const { fg, bg, em } = R;
-  const cols = R.cols;
   // particles
   for (const p of G.fx) {
     const fade = Math.min(1, p.life / Math.min(40, p.max));
@@ -223,31 +248,65 @@ export function drawOverlays(view, time) {
     if (p.text) overlayText(view, x, y, p.text, c[0] * fade, c[1] * fade, c[2] * fade, p.glow || 0.2);
     else overlayGlyph(view, x, y, gi(p.glyph), c[0] * fade, c[1] * fade, c[2] * fade, p.glow || 0);
   }
-  // villagers
+  // who is under the mouse?
+  let hovered = null;
+  if (IN.inside && IN.sx >= 0) {
+    let bd = 3;
+    for (const v of T.villagers) {
+      if (v.inside) continue;
+      const d = Math.hypot(v.x + 0.5 - IN.wx, (v.y - 0.2 - IN.wy) * 1.4);
+      if (d < bd) { bd = d; hovered = v; }
+    }
+  }
+  // villagers: a head and a body, kids are a single head
   for (const v of T.villagers) {
     if (v.inside) continue;
-    const vx = v.x - view.ox, vy = v.y - view.oy;
-    if (vx < 0 || vy < 0 || vx >= cols || vy >= R.rows) continue;
-    const o = (vy * cols + vx) * 4;
-    const praying = v.state === 'work' && v.action === 'pray';
-    const sleeping = v.state === 'work' && v.action === 'sleep';
-    fg[o] = v.color[0]; fg[o + 1] = v.color[1]; fg[o + 2] = v.color[2];
-    fg[o + 3] = sleeping ? G_Z : v.kid ? G_KID : praying && Math.floor(time * 2) % 2 ? G_PRAY : G_SMILE;
-    bg[o + 3] = (bg[o + 3] & 15) | (9 << 4);
-    bg[o] *= 0.62; bg[o + 1] *= 0.62; bg[o + 2] *= 0.66;
-    if (T.era >= 3 && G.env.night) { em[o] = Math.min(255, em[o] + 120); em[o + 1] = Math.min(255, em[o + 1] + 90); em[o + 2] = Math.min(255, em[o + 2] + 40); }
+    if (v.x < view.ox - 1 || v.x > view.ox + view.cols || v.y < view.oy - 1 || v.y > view.oy + view.rows + 1) continue;
+    const skin = v.skin || SKIN0;
+    const here = W.t[v.y * W.w + v.x];
+    const swimming = here === E.WATER || here === E.OIL;
+    const work = v.state === 'work' ? v.action : null;
+    const night = T.era >= 3 && G.env.night ? 0.35 : 0;
+    let top = v.y;
+    if (v.kid) {
+      vcell(view, v.x, v.y, GL.kid, v.color, 0.12 + night);
+    } else if (swimming) {
+      vcell(view, v.x, v.y, GL.face, skin, 0.1);
+    } else if (work === 'sleep') {
+      vcell(view, v.x, v.y, GL.lie, v.color, 0.1);
+      if (openCell(W, v.x, v.y - 1)) { vcell(view, v.x, v.y - 1, GL.z, [190, 200, 255], 0.2); top = v.y - 1; }
+    } else {
+      let body = GL.stand;
+      if (work === 'pray') body = GL.robe;
+      else if (work === 'chop' || work === 'mine' || work === 'build') body = Math.floor(time * 5 + v.id) % 2 ? GL.arms : GL.stand;
+      else if (v.fall > 1 || v.climb > 0) body = GL.arms;
+      else if (v.state === 'walk' || v.state === 'flee') body = (v.x & 1) ? GL.stride : GL.stand;
+      vcell(view, v.x, v.y, body, v.color, 0.1 + night);
+      if (openCell(W, v.x, v.y - 1)) {
+        vcell(view, v.x, v.y - 1, v.age >= 10 ? GL.old : GL.face, skin, 0.08 + night * 0.5);
+        top = v.y - 1;
+      }
+    }
+    let lane = top - 1;
     if (v.carry) {
       const [g, c] = CARRY[v.carry];
-      const tt = W.t[(v.y - 1) * W.w + v.x];
-      if (tt === E.EMPTY || tt === E.STRUCT || tt === E.LEAF) overlayGlyph(view, v.x, v.y - 1, gi(g), c[0], c[1], c[2], 0, true, 0x9f);
+      if (openCell(W, v.x, lane)) overlayGlyph(view, v.x, lane, gi(g), c[0], c[1], c[2], 0, true, 0x9f);
+      lane--;
     }
     if (v.sayT > 0 && v.say) {
       const f = Math.min(1, v.sayT / 30);
-      overlayText(view, v.x, v.y - 2, v.say, 240 * f, 240 * f, 255 * f, 0.15);
+      overlayText(view, v.x, lane, v.say, 240 * f, 240 * f, 255 * f, 0.15);
+      lane--;
     }
-    if (G.cam.follow === v.id) {
+    const followed = G.cam.follow === v.id;
+    if (followed || v === hovered) {
+      const c = v.color;
+      overlayText(view, v.x, lane, v.name, c[0], c[1], c[2], 0.25);
+      lane--;
+    }
+    if (followed) {
       const b = 0.6 + 0.4 * Math.sin(time * 6);
-      overlayGlyph(view, v.x, v.y - (v.sayT > 0 ? 3 : 2), G_MARK, 255 * b, 207 * b, 90 * b, 0.6, true, 0xff);
+      overlayGlyph(view, v.x, lane, GL.mark, 255 * b, 207 * b, 90 * b, 0.6, true, 0xff);
     }
   }
   // rocket in flight

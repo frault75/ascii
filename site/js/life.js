@@ -42,7 +42,16 @@ export const BUILDINGS = {
 };
 const MATC = { c: MAT.CLOTH, r: MAT.ROOF, w: MAT.WOOD, g: MAT.WINDOW, d: MAT.DOOR, s: MAT.STONE, b: MAT.BRICK, m: MAT.METAL, e: MAT.PANE, o: MAT.GOLD, n: MAT.NEON, h: MAT.HULL, f: MAT.FLAME, k: MAT.DARK };
 
-const COLORS = [[255, 207, 90], [122, 215, 255], [255, 126, 182], [141, 255, 154], [255, 166, 74], [197, 138, 255], [255, 255, 255], [255, 110, 90]];
+// vivid, well-separated clothing colours so every villager is recognisable
+const COLORS = [[255, 72, 72], [255, 160, 40], [255, 228, 60], [120, 240, 80], [40, 220, 200], [70, 150, 255], [170, 110, 255], [255, 90, 200], [255, 255, 255], [150, 255, 210], [255, 190, 150], [120, 200, 255]];
+const SKINS = [[255, 224, 189], [241, 194, 125], [224, 172, 105], [198, 134, 66], [141, 85, 36], [255, 205, 148]];
+function freshColor() {
+  const used = new Map();
+  for (const v of G.tribe.villagers) used.set(v.color, (used.get(v.color) || 0) + 1);
+  let best = COLORS[0], n = 1e9;
+  for (const c of COLORS) { const k = used.get(c) || 0; if (k < n || (k === n && Math.random() < 0.3)) { n = k; best = c; } }
+  return best;
+}
 
 export function createTribe() {
   G.tribe = {
@@ -91,7 +100,7 @@ export function spawnVillager(x, y, opts = {}) {
     id: T.nextId++, name: makeName(), x, y, dir: Math.random() < 0.5 ? -1 : 1,
     state: 'idle', job: 'idle', timer: 0, cool: 0, carry: null, carryAmt: 0,
     age: opts.age ?? 0, kid: opts.kid ?? false, breath: 240, fall: 0, home: 0, inside: false,
-    say: null, sayT: 0, color: pick(COLORS), stuck: 0, lastX: x, tx: x, ty: y, ti: -1,
+    say: null, sayT: 0, color: freshColor(), skin: pick(SKINS), stuck: 0, lastX: x, tx: x, ty: y, ti: -1,
     faithT: (Math.random() * 600) | 0, born: G.env.day, dangerT: 0, glyph: 0,
   };
   T.villagers.push(v);

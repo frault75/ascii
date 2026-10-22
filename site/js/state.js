@@ -22,7 +22,7 @@ export const G = {
   realTime: 0,
   settings: {
     lang: (navigator.language || 'fr').toLowerCase().startsWith('fr') ? 'fr' : 'en',
-    crt: 0.6,
+    crt: 0.45,
     bloom: 1,
     volume: 0.7,
     music: 0.5,

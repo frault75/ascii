@@ -305,6 +305,13 @@ export function miracle(id) {
       floatText(T.center, G.world.surf[Math.round(T.center)] - 4, '+' + n + '♣', [140, 255, 150], 140);
       break;
     }
+    case 'gift': {
+      T.wood += 15; T.stone += 15;
+      if (T.era >= 3) T.metal += 8;
+      const gx = Math.round(T.center), gy = G.world.surf[Math.max(1, Math.min(G.world.w - 2, gx))] - 4;
+      floatText(gx, gy, '+15≡ +15▪' + (T.era >= 3 ? ' +8◆' : ''), [210, 220, 235], 150);
+      break;
+    }
     case 'bless': T.blessT = 300; T.trauma = 0; for (const v of T.villagers) say(v, '♥', 140); break;
     case 'rainbow': env.rainbow = 1; emit('discover', 'rainbow'); break;
     case 'aurora': env.auroraTarget = 1; env.aurora = Math.max(env.aurora, 0.3); if (!env.night) env.time += ((0.8 - env.tod + 1) % 1) * DAY; emit('discover', 'aurora'); break;

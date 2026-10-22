@@ -256,6 +256,30 @@ pre.help { margin: 0; white-space: pre-wrap; font: inherit; font-size: 11px; col
 #banner .d { font-size: 13px; color: var(--ink); letter-spacing: .2em; opacity: .85; }
 #banner .bt { pointer-events: auto; margin-top: 26px; }
 
+/* ── transmissions: a villager talks to you ── */
+#tx {
+  --vc: var(--amber);
+  position: absolute; left: 50%; bottom: 138px; transform: translateX(-50%) translateY(10px); width: min(560px, calc(100vw - 24px));
+  padding: 10px 14px 12px; background: rgba(4, 7, 12, 0.92); border-color: var(--vc); opacity: 0; pointer-events: none;
+  box-shadow: 0 0 28px color-mix(in srgb, var(--vc) 30%, transparent), inset 0 0 18px color-mix(in srgb, var(--vc) 10%, transparent);
+  transition: opacity .3s ease, transform .3s ease; z-index: 6;
+}
+#tx.show { opacity: 1; pointer-events: auto; transform: translateX(-50%); }
+#tx .th { font-size: 10px; letter-spacing: .22em; color: var(--dim); display: flex; align-items: center; gap: 6px; }
+#tx .th b { color: var(--vc); text-shadow: 0 0 10px var(--vc); }
+#tx .th .dot { color: var(--vc); animation: blink 1s steps(1) infinite; }
+#tx .th .x { margin-left: auto; color: var(--dim); }
+#tx .tb { margin-top: 8px; font-size: 14px; line-height: 1.5; color: var(--ink); min-height: 2.6em; }
+#tx .pr { color: var(--vc); }
+#tx .cur { color: var(--vc); animation: blink .8s steps(1) infinite; margin-left: 1px; }
+#tx .tg { font-size: 11px; color: var(--dim); font-style: italic; margin-top: 4px; }
+#tx .tg:empty { display: none; }
+#tx .ta { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
+#tx .ta:empty { display: none; }
+#req { padding: 9px 12px; border-color: rgba(255, 207, 90, .45); }
+#req .q { font-size: 11px; color: var(--ink); font-style: italic; }
+#req .pb { margin-top: 6px; font-size: 10px; color: var(--amber); white-space: pre; }
+
 /* ── cursor hint ── */
 #hint { position: absolute; bottom: 124px; left: 50%; transform: translateX(-50%); font-size: 11px; color: var(--dim); letter-spacing: .1em; padding: 5px 12px; pointer-events: none; transition: opacity .6s; }
 
@@ -290,4 +314,6 @@ pre.help { margin: 0; white-space: pre-wrap; font: inherit; font-size: 11px; col
   #toasts { top: 140px; }
   .toast { min-width: 240px; }
   #hint { display: none; }
+  #tx { bottom: 128px; }
+  #tx .tb { font-size: 12px; }
 }

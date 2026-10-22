@@ -53,6 +53,7 @@ export const TOOLS = [
   { id: 'rain', cat: 'miracle', miracle: 'rain', use: 20, g: '╱', c: '#7ab8ff', n: { fr: 'Pluie', en: 'Rain' }, d: { fr: 'Appelle la pluie sur le monde.', en: 'Calls rain upon the world.' } },
   { id: 'sun', cat: 'miracle', miracle: 'sun', use: 20, g: '☼', c: '#ffd84a', n: { fr: 'Beau temps', en: 'Clear skies' }, d: { fr: 'Chasse les nuages.', en: 'Chases the clouds away.' } },
   { id: 'harvest', cat: 'miracle', miracle: 'harvest', use: 35, g: '♣', c: '#8dff9a', n: { fr: 'Abondance', en: 'Abundance' }, d: { fr: 'Offre de la nourriture à la tribu.', en: 'Gifts food to the tribe.' } },
+  { id: 'gift', cat: 'miracle', miracle: 'gift', use: 120, cost: 80, g: '◆', c: '#c8d0dc', n: { fr: 'Don de la terre', en: 'Gift of the earth' }, d: { fr: 'Offre bois, pierre et métal à la tribu.', en: 'Gifts wood, stone and metal to the tribe.' } },
   { id: 'bless', cat: 'miracle', miracle: 'bless', use: 50, cost: 40, g: '♥', c: '#ff7eb6', n: { fr: 'Bénédiction', en: 'Blessing' }, d: { fr: 'La tribu rayonne de joie (et prie plus).', en: 'The tribe glows with joy (and prays more).' } },
   { id: 'rainbow', cat: 'miracle', miracle: 'rainbow', use: 60, cost: 50, g: '◠', c: '#ff9a3a', n: { fr: 'Arc-en-ciel', en: 'Rainbow' }, d: { fr: 'Un signe dans le ciel.', en: 'A sign in the sky.' } },
   { id: 'aurora', cat: 'miracle', miracle: 'aurora', use: 80, cost: 120, g: '¦', c: '#8dff9a', n: { fr: 'Aurore', en: 'Aurora' }, d: { fr: 'Rideaux de lumière la nuit.', en: 'Curtains of light at night.' } },

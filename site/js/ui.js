@@ -5,6 +5,7 @@ import { E, LUT_FG, LUT_BG } from './elements.js';
 import { TOOLS, TOOL, CATS, DISCOVERIES, ACHIEVEMENTS, QUESTS, LAUNCH_COST, isUnlocked, unlock, isSandbox, canAdvance, advance, canSpend } from './progress.js';
 import { ERAS, BUILDINGS, capacity, countB } from './life.js';
 import { miracle } from './powers.js';
+import { acceptRequest, declineRequest, requestProgress } from './voices.js';
 import { fmt, clamp } from './util.js';
 import { SEASONS, DAY } from './weather.js';
 
@@ -68,7 +69,7 @@ export function buildUI() {
   );
   const left = h('div', '', '');
   left.id = 'left';
-  left.innerHTML = `<div id="quest" class="frame"></div><div id="log" class="frame"><div class="ttl"><b>${t('log')}</b></div><div class="lines"></div></div>`;
+  left.innerHTML = `<div id="quest" class="frame"></div><div id="req" class="frame"></div><div id="log" class="frame"><div class="ttl"><b>${t('log')}</b></div><div class="lines"></div></div>`;
   ui.append(left);
   const side = h('div');
   side.id = 'side';
@@ -103,6 +104,9 @@ export function buildUI() {
   const hint = h('div', '');
   hint.id = 'hint';
   ui.append(hint);
+  const tx = h('div', 'frame');
+  tx.id = 'tx';
+  ui.append(tx);
   let banner = $('#banner');
   if (!banner) { banner = h('div'); banner.id = 'banner'; document.body.append(banner); }
 
@@ -301,12 +305,20 @@ function civHTML() {
   for (const b of T.buildings) kinds[b.kind] = (kinds[b.kind] || 0) + 1;
   const blist = Object.entries(kinds).map(([k, n]) => `<div class="row"><span class="l">${t('b_' + k)}</span><span class="v">×${n}</span></div>`).join('');
   const vl = T.villagers.slice(0, 80).map((v) => `<div class="vl" data-v="${v.id}"><span class="g" style="color:rgb(${v.color})">${v.kid ? 'o' : '☺'}</span>${v.name}<span class="j">${v.kid ? t('kid') : t('job_' + v.job)} · ${v.age} ${t('days')}</span></div>`).join('');
+  let project = '';
+  if (T.building && BUILDINGS[T.building]) {
+    const cost = BUILDINGS[T.building].cost;
+    const icon = { wood: '≡', stone: '▪', metal: '◆' };
+    const parts = Object.entries(cost).map(([k, n]) => `<span class="${(T[k] || 0) >= n ? 'green' : 'red'}">${icon[k]} ${Math.min(n, Math.floor(T[k] || 0))}/${n}</span>`).join('  ');
+    project = `<div class="row"><span class="l">${G.settings.lang === 'fr' ? 'chantier' : 'project'}</span><span class="v">${t('b_' + T.building)} · ${parts}</span></div>`;
+  }
   return `<div class="ttl"><b>${t('civ')}</b></div>
     <div class="row"><span class="l">${t('eraWord')} ${ROMAN[T.era]}</span><span class="v amber">${t('era' + T.era)}</span></div>
     <div class="row"><span class="l">${t('pop')}</span><span class="v">${pop} / ${cap}</span></div>
     <div class="row"><span class="l">♥ / †</span><span class="v">${T.births} / ${T.deaths}</span></div>
     <div class="row"><span class="l">${t('mood')}</span><span class="v">${moodWord()} (${Math.round(T.happiness * 100)}%)</span></div>
     <div class="row"><span class="l">${t('faith')}</span><span class="v cyan">+${T.faithRate.toFixed(2)} ◊/s</span></div>
+    ${project}
     ${next}
     <h3>${t('buildings')}</h3>${blist || '<div class="dim">—</div>'}
     <h3>${t('villagers')}</h3>${vl || '<div class="dim">—</div>'}`;
@@ -444,6 +456,18 @@ export function updateHUD(force = false) {
     qe.innerHTML = `<div class="ttl"><b>${t('quest')} ${P.quest + 1}/${QUESTS.length}</b></div>${q.r ? `<span class="rw">+${q.r}◊</span>` : ''}<div class="q">${tr(q.n)}</div><div class="pb">[${'█'.repeat(f)}${'░'.repeat(w - f)}] ${Math.min(cur, goal)}/${goal}</div>`;
   } else qe.style.display = 'none';
 
+  // the tribe's request to you
+  const rq = $('#req');
+  const pr = requestProgress();
+  if (rq) {
+    if (pr) {
+      const w = 18, f = Math.round(clamp(pr.cur / pr.goal, 0, 1) * w);
+      const mm = Math.floor(pr.left / 60), ss = Math.floor(pr.left % 60);
+      rq.style.display = '';
+      rq.innerHTML = `<div class="ttl"><b>${G.settings.lang === 'fr' ? 'DEMANDE DE' : 'REQUEST FROM'} ${pr.name.toUpperCase()}</b></div><div class="q">« ${pr.text} »</div><div class="pb">[${'█'.repeat(f)}${'░'.repeat(w - f)}] ${Math.min(Math.floor(pr.cur), pr.goal)}/${pr.goal} ${pr.unit} · ${mm}:${String(ss).padStart(2, '0')}</div>`;
+    } else rq.style.display = 'none';
+  }
+
   // revelation / launch card
   const rv = $('#reveal');
   const nx = ERAS[T.era + 1];
@@ -474,7 +498,7 @@ export function cellInfo(x, y) {
   const W = G.world;
   if (!W || x < 0 || y < 0 || x >= W.w || y >= W.h) return '';
   const T = G.tribe;
-  const v = T.villagers.find((q) => !q.inside && q.x === x && q.y === y);
+  const v = T.villagers.find((q) => !q.inside && q.x === x && (q.y === y || (!q.kid && q.y - 1 === y)));
   if (v) return `<b style="color:rgb(${v.color})">☺ ${v.name}</b> · ${v.kid ? t('kid') : t('job_' + v.job)} · ${t('age')} ${v.age}`;
   const tt = W.t[y * W.w + x];
   let extra = '';
@@ -526,6 +550,58 @@ export function banner(k, title, desc, button, onBtn, ms = 4200) {
   scramble(b.querySelector('.h'), title, 1400);
   if (button) b.querySelector('button').onclick = () => { b.classList.remove('show'); onBtn && onBtn(); };
   else setTimeout(() => b.classList.remove('show'), ms);
+}
+
+// ── a villager speaks to you directly ──
+let txTimer = 0;
+export function showTransmission(m) {
+  const box = $('#tx');
+  if (!box) return;
+  const v = m.v;
+  const fr = G.settings.lang === 'fr';
+  const job = v.kid ? t('kid') : v.job && v.job !== 'idle' ? t('job_' + v.job) : '';
+  box.style.setProperty('--vc', `rgb(${v.color})`);
+  box.innerHTML = `<div class="th"><span class="dot">◉</span> ${fr ? 'TRANSMISSION' : 'TRANSMISSION'} · <b>${v.name.toUpperCase()}</b> <span class="dim">${job}</span><button class="x" data-tx="close">✕</button></div>
+    <div class="tb"><span class="pr">&gt;</span> <span class="tt"></span><span class="cur">█</span></div>
+    <div class="tg"></div>
+    <div class="ta"></div>`;
+  box.classList.add('show');
+  const tt = box.querySelector('.tt');
+  const text = m.text;
+  let i = 0;
+  clearInterval(txTimer);
+  txTimer = setInterval(() => {
+    i++;
+    tt.textContent = text.slice(0, i);
+    if (i % 2 === 0 && G.audio) G.audio.sfx('type');
+    if (i >= text.length) {
+      clearInterval(txTimer);
+      if (m.gloss) box.querySelector('.tg').textContent = (fr ? '≈ traduction approximative : « ' : '≈ rough translation: "') + m.gloss + (fr ? ' »' : '"');
+      const acts = box.querySelector('.ta');
+      if (m.req) {
+        acts.innerHTML = `<button class="bt gold" data-tx="yes">✓ ${fr ? 'JE M\'EN OCCUPE' : 'I\'LL HANDLE IT'}</button><button class="bt" data-tx="no">✗ ${fr ? 'PAS MAINTENANT' : 'NOT NOW'}</button><button class="bt" data-tx="see">◎ ${fr ? 'VOIR' : 'SEE'}</button>`;
+      } else {
+        acts.innerHTML = `<button class="bt" data-tx="close">${fr ? 'JE T\'ENTENDS' : 'I HEAR YOU'}</button><button class="bt" data-tx="see">◎ ${fr ? 'VOIR' : 'SEE'}</button>`;
+        setTimeout(() => { if (box.querySelector('.tt') === tt) closeTx(); }, 16000);
+      }
+    }
+  }, 34);
+  box.onclick = (e) => {
+    const b = e.target.closest('[data-tx]');
+    if (!b) return;
+    const a = b.dataset.tx;
+    if (a === 'see') { G.cam.follow = v.id; sfx('select'); return; }
+    if (a === 'yes') { acceptRequest(); sfx('quest'); }
+    else if (a === 'no') declineRequest();
+    else if (m.req) declineRequest();
+    else sfx('click');
+    closeTx();
+  };
+}
+function closeTx() {
+  clearInterval(txTimer);
+  const box = $('#tx');
+  if (box) box.classList.remove('show');
 }
 
 export function hint(text) {

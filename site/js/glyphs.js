@@ -4,7 +4,7 @@ const BASE =
   ' !"#$%&\'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~';
 const ACCENTS = 'éèêëàâäçôöûùüîïÉÈÊÀÂÇÔÛÎœŒ«»’…—';
 const BLOCKS = '█▀▄▌▐░▒▓│─║═┌┐└┘╔╗╚╝╱╲╳┼├┤┬┴▖▗▘▝▙▛▜▟▞▚◢◣◤◥';
-const SYMBOLS = '▲▼◄►■□▪▫●○◊◆♦♣♠♥☺☻☼≈∙·°∘≡¤†‡¡ψΨжЖ✿❀✦✧★☆♪♫∩ΠΛπΩ∞∴⌂∼‾¦ϟ↑↓←→ʷ˄˅‿⁀¸˙';
+const SYMBOLS = '▲▼◄►■□▪▫●○◊◆♦♣♠♥☺☻☼≈∙·°∘≡¤†‡¡ψΨжЖ✿❀✦✧★☆♪♫∩ΠΛπΩ∞∴⌂∼‾¦ϟ↑↓←→ʷ˄˅‿⁀¸˙λ▬';
 
 export const CHARSET = [];
 const INDEX = new Map();

@@ -16,6 +16,7 @@ import { Sound } from './audio.js';
 import { hasSave, loadSettings } from './save.js';
 import { newGame, resumeGame, wireEvents, drawOverlays, updateRocket, updateHints, autosave } from './game.js';
 import { t } from './i18n.js';
+import { updateVoices } from './voices.js';
 import { clamp } from './util.js';
 
 const BASE_W = 10, BASE_H = 16;
@@ -253,6 +254,7 @@ function gameFrame(dt) {
   G.flash = Math.max(0, G.flash - dt * 1.6);
   G.glitch = Math.max(0, G.glitch - dt * 0.8);
 
+  updateVoices(dt);
   for (const k in timers) timers[k] += dt;
   if (timers.hud > 0.25) { timers.hud = 0; updateHUD(); }
   if (timers.hover > 0.1) { timers.hover = 0; hoverInfo(); }
