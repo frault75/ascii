@@ -149,7 +149,7 @@ const SOFT = new Set([E.DIRT, E.GRASS, E.SAND, E.SNOW, E.ASH, E.SEED]);
 const CLEAR = new Set([E.EMPTY, E.PLANT, E.FLOWER, E.SNOW, E.SEED, E.ASH, E.SMOKE, E.STEAM, E.BIRD, E.BUTTERFLY, E.FIREFLY, E.LEAF, E.WOOD, E.SAPLING]);
 
 // find a spot; builders level the ground (dig soft soil, fill small gaps)
-function findSite(kind, cx, radius = 90, ignoreId = 0) {
+export function findSite(kind, cx, radius = 90, ignoreId = 0) {
   const B = BUILDINGS[kind];
   const bw = B.rows[0].length, bh = B.rows.length;
   const w = W();
@@ -163,7 +163,7 @@ function findSite(kind, cx, radius = 90, ignoreId = 0) {
       for (let c = 0; c < bw && ok; c++) {
         const x = x0 + c;
         let y = Math.max(2, w.surf[x] - 24);
-        const ign = (yy) => (ignoreId && t[yy * w.w + x] === E.STRUCT && w.a[yy * w.w + x] === ignoreId) || t[yy * w.w + x] === E.WOOD;
+        const ign = (yy) => (ignoreId && t[yy * w.w + x] === E.STRUCT && w.a[yy * w.w + x] === ignoreId) || t[yy * w.w + x] === E.WOOD || t[yy * w.w + x] === E.SNOW || t[yy * w.w + x] === E.ASH;
         while (y < w.h - 2 && (!STAND[t[y * w.w + x]] || ign(y))) {
           const q = t[y * w.w + x];
           if (q === E.WATER || q === E.LAVA || q === E.ACID || q === E.OIL) { ok = false; break; }
@@ -382,7 +382,7 @@ function tryStep(v, dir) {
       if (bottom === E.WATER && walking && drop < 10) { v.x = nx; v.descend = true; return true; }
       return false;
     }
-    if (bottom === E.WATER && !swimIn && !shallow) return false;
+    if (bottom === E.WATER && !swimIn && !shallow && !walking) return false;
     v.x = nx;
     return true;
   }
@@ -465,7 +465,8 @@ function assign(v) {
       }
     }
   } else if (job === 'stone') {
-    const tg = scanNear(v.x, 60, T.era >= 3 && T.metal < 30 && Math.random() < 0.5 ? P.metal : P.stone, 10, T.era >= 3 ? 14 : 9);
+    const wantMetal = T.era >= 3 && T.metal < 40 && Math.random() < 0.55;
+    const tg = scanNear(v.x, 70, wantMetal ? P.metal : P.stone, 10, wantMetal ? 30 : T.era >= 3 ? 14 : 9);
     if (tg) { claim(v, tg); walkTo(v, tg.x, W().surf[tg.x] - 1, 'mine'); return; }
   } else if (job === 'build') {
     const kind = T.building;
@@ -479,6 +480,7 @@ function assign(v) {
         return;
       }
       T.blocked = (T.blocked || 0) + 1;
+      dbg('nosite:' + kind);
       // no free land: replace the oldest, humblest dwelling with a better one
       const up = TIER[kind] ? oldestBelow(TIER[kind]) : null;
       const s2 = up ? findSite(kind, up.x + (up.w >> 1), 10, up.id) : null;
@@ -489,6 +491,7 @@ function assign(v) {
           v.site = { kind, ...s2 };
           T.building = null;
           emit('upgrade', up.kind, kind);
+          dbg('upgrade:' + kind);
           walkTo(v, s2.x + (s2.bw >> 1), s2.y, 'build', 2);
           return;
         }
@@ -636,9 +639,23 @@ function finishWork(v) {
       break;
     case 'mine': {
       const tt = w.t[v.ti];
-      if (tt === E.STONE) { putCell(v.ti, E.EMPTY); v.carry = 'stone'; v.carryAmt = 1; }
-      else if (tt === E.METAL) { putCell(v.ti, E.EMPTY); v.carry = 'metal'; v.carryAmt = 1; }
-      else if (tt === E.GOLD) { putCell(v.ti, E.EMPTY); v.carry = 'metal'; v.carryAmt = 2; emit('gold', v); }
+      // a good haul: the target block plus a couple of neighbours of the same ore
+      const kind = tt === E.STONE ? 'stone' : tt === E.METAL || tt === E.GOLD ? 'metal' : null;
+      if (kind) {
+        let n = 0;
+        for (const o of [0, -1, 1, w.w, -w.w]) {
+          const j = v.ti + o;
+          const tj = w.t[j];
+          if ((kind === 'stone' && tj === E.STONE) || (kind === 'metal' && (tj === E.METAL || tj === E.GOLD))) {
+            n += tj === E.GOLD ? 2 : 1;
+            if (tj === E.GOLD) emit('gold', v);
+            putCell(j, E.EMPTY);
+            if (n >= 3) break;
+          }
+        }
+        v.carry = kind;
+        v.carryAmt = n;
+      }
       release(v);
       break;
     }
@@ -647,8 +664,8 @@ function finishWork(v) {
       v.site = null;
       if (s) {
         const again = findSite(s.kind, s.x + (s.bw >> 1), 4);
-        if (again) placeBuilding(s.kind, again.x, again.y);
-        else { const T2 = G.tribe; for (const k in BUILDINGS[s.kind].cost) T2[k] += BUILDINGS[s.kind].cost[k]; }
+        if (again) { placeBuilding(s.kind, again.x, again.y); dbg('built:' + s.kind); }
+        else { dbg('refund:' + s.kind); const T2 = G.tribe; for (const k in BUILDINGS[s.kind].cost) T2[k] += BUILDINGS[s.kind].cost[k]; }
       }
       v.job = 'idle';
       break;
@@ -794,7 +811,7 @@ export function updateLife() {
     if (v.state === 'walk') {
       const dx = v.tx - v.x;
       if (Math.abs(dx) <= v.reach) {
-        if (Math.abs(v.ty - v.y) <= 4) arrive(v);
+        if (Math.abs(v.ty - v.y) <= 4 || (Math.abs(v.ty - v.y) <= 10 && ++v.stuck > 6)) { v.stuck = 0; arrive(v); }
         else if (++v.stuck > 30) giveUp(v);
         continue;
       }
@@ -899,12 +916,12 @@ function manage() {
   // jobs: guarantee the urgent quotas, then everyone else works where it's needed
   const adults = T.villagers.filter((v) => !v.kid);
   const want = { food: 0, wood: 0, stone: 0, build: 0, pray: 0 };
-  const foodNeed = pop * 4 + 4;
-  want.food = T.food < foodNeed ? Math.ceil(adults.length * 0.4) : 1;
+  const foodNeed = pop * (env.season === 2 ? 9 : env.season === 3 ? 6 : 4) + 6;
+  want.food = T.food < foodNeed ? Math.ceil(adults.length * (T.food < pop * 2 ? 0.55 : 0.4)) : 1;
   const woodNeed = (cost.wood || 0) + (T.era >= 1 ? 4 : 2);
   if (T.wood < woodNeed) want.wood = Math.max(1, Math.ceil(adults.length * 0.25));
   const stoneNeed = (cost.stone || 0) + (T.era >= 2 ? 4 : 0);
-  if (T.stone < stoneNeed || (cost.metal && T.metal < cost.metal)) want.stone = Math.max(1, Math.ceil(adults.length * (cost.metal ? 0.35 : 0.25)));
+  if (T.stone < stoneNeed || (cost.metal && T.metal < cost.metal)) want.stone = Math.max(1, Math.ceil(adults.length * (cost.metal || (cost.stone || 0) > 8 ? 0.4 : 0.25)));
   if (T.building && afford(cost)) want.build = 1;
   const temple = T.buildings.some((b) => b.kind === 'temple');
   if (temple) want.pray = Math.ceil(adults.length * 0.08);
@@ -924,9 +941,9 @@ function manage() {
     }
   }
   const weights = [
-    ['food', T.food < pop * 6 ? 3 : T.food < pop * 14 ? 1 : 0.15],
+    ['food', T.food < foodNeed ? 3 : T.food < pop * 14 ? 1 : 0.15],
     ['wood', T.wood < 25 + T.era * 15 ? 1.6 : 0.2],
-    ['stone', T.era >= 1 && T.stone < 20 + T.era * 15 ? 1.4 : 0],
+    ['stone', T.era >= 1 && (T.stone < 20 + T.era * 15 || (T.era >= 3 && T.metal < 40)) ? 1.8 : 0],
     ['pray', temple ? 0.7 : 0],
     ['idle', 0.6],
   ];

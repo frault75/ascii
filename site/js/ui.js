@@ -275,11 +275,13 @@ function renderPanel(name) {
   const p = $('#p-' + name);
   if (!p) return;
   const close = '<button class="x" data-close>✕</button>';
+  const scroll = p.scrollTop;
   if (name === 'civ') p.innerHTML = close + civHTML();
   else if (name === 'codex') p.innerHTML = close + codexHTML();
   else if (name === 'settings') p.innerHTML = close + settingsHTML();
   else if (name === 'help') p.innerHTML = close + `<div class="ttl"><b>${t('help')}</b></div><pre class="help">${t('helpText')}</pre>` + guideHTML();
   p.querySelector('[data-close]').onclick = () => togglePanel(name);
+  p.scrollTop = scroll;
   bindPanel(p, name);
 }
 

@@ -234,6 +234,7 @@ export function drawOverlays(view, time) {
     fg[o] = v.color[0]; fg[o + 1] = v.color[1]; fg[o + 2] = v.color[2];
     fg[o + 3] = sleeping ? G_Z : v.kid ? G_KID : praying && Math.floor(time * 2) % 2 ? G_PRAY : G_SMILE;
     bg[o + 3] = (bg[o + 3] & 15) | (9 << 4);
+    bg[o] *= 0.62; bg[o + 1] *= 0.62; bg[o + 2] *= 0.66;
     if (T.era >= 3 && G.env.night) { em[o] = Math.min(255, em[o] + 120); em[o + 1] = Math.min(255, em[o + 1] + 90); em[o + 2] = Math.min(255, em[o + 2] + 40); }
     if (v.carry) {
       const [g, c] = CARRY[v.carry];

@@ -54,8 +54,8 @@ const S = {
   on: ['oui', 'on'], off: ['non', 'off'],
   // help
   helpText: [
-    'CLIC GAUCHE  peindre avec l\'outil choisi\nCLIC DROIT / glisser  déplacer la caméra\nMOLETTE  zoom   ·   MAJ+MOLETTE / [ ]  taille du pinceau\nZQSD / FLÈCHES  se déplacer\nESPACE  pause   ·   1-4  vitesse\nTAB  catégorie suivante   ·   H  cacher l\'interface\nC  codex   ·   V  civilisation   ·   M  muet   ·   P  photo\nCLIC sur un villageois  le suivre',
-    'LEFT CLICK  paint with the selected tool\nRIGHT CLICK / drag  move the camera\nWHEEL  zoom   ·   SHIFT+WHEEL / [ ]  brush size\nWASD / ARROWS  move\nSPACE  pause   ·   1-4  speed\nTAB  next category   ·   H  hide interface\nC  codex   ·   V  civilisation   ·   M  mute   ·   P  photo\nCLICK a villager  follow them',
+    'CLIC GAUCHE  peindre avec l\'outil choisi\nCLIC DROIT / glisser  déplacer la caméra\nMOLETTE  zoom   ·   MAJ+MOLETTE / [ ]  taille du pinceau\nZQSD / FLÈCHES  se déplacer\nESPACE  pause   ·   F  accélérer   ·   1-9  outils   ·   E  gomme\nTAB  catégorie suivante   ·   H  cacher l\'interface\nC  codex   ·   V  civilisation   ·   M  muet   ·   P  photo\nCLIC sur un villageois  le suivre',
+    'LEFT CLICK  paint with the selected tool\nRIGHT CLICK / drag  move the camera\nWHEEL  zoom   ·   SHIFT+WHEEL / [ ]  brush size\nWASD / ARROWS  move\nSPACE  pause   ·   F  speed up   ·   1-9  tools   ·   E  eraser\nTAB  next category   ·   H  hide interface\nC  codex   ·   V  civilisation   ·   M  mute   ·   P  photo\nCLICK a villager  follow them',
   ],
   // misc log lines
   logBirth: ['{0} est né·e.', '{0} was born.'],
