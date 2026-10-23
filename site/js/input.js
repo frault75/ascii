@@ -24,6 +24,7 @@ function updateCursor(e) {
 }
 
 function zoomAt(sx, sy, factor) {
+  G.cam.tween = null;
   const cam = G.cam;
   const before = toWorld(sx, sy);
   cam.zoom = clamp(cam.zoom * factor, 0.45, 3.2);
@@ -67,7 +68,7 @@ export function setupInput(canvas) {
     if (pan) {
       IN.panning = true;
       IN.lastX = e.clientX; IN.lastY = e.clientY;
-      G.cam.follow = null;
+      G.cam.follow = null; G.cam.tween = null;
       return;
     }
     if (e.button === 0) {
@@ -163,7 +164,17 @@ export function updateCamera(dt) {
   if (K.has('arrowright') || K.has('d')) mx += 1;
   if (K.has('arrowup') || K.has('z') || K.has('w')) my -= 1;
   if (K.has('arrowdown') || K.has('s')) my += 1;
-  if (mx || my) { cam.x += mx * sp; cam.y += my * sp * 0.65; cam.follow = null; }
+  if (mx || my) { cam.x += mx * sp; cam.y += my * sp * 0.65; cam.follow = null; cam.tween = null; }
+  // a smooth flight to a point of interest (an era begins…)
+  if (cam.tween) {
+    const tw = cam.tween;
+    tw.t += dt;
+    const k = Math.min(1, tw.t / tw.dur), e = k * k * (3 - 2 * k);
+    cam.zoom = tw.z0 + (tw.z1 - tw.z0) * e;
+    cam.x = tw.x0 + (tw.x1 - tw.x0) * e;
+    cam.y = tw.y0 + (tw.y1 - tw.y0) * e;
+    if (k >= 1) cam.tween = null;
+  }
   if (cam.follow) {
     const v = G.tribe.villagers.find((q) => q.id === cam.follow);
     if (!v) cam.follow = null;

@@ -328,6 +328,15 @@ def('shingles', (g) => {
     g.set((row * 2) % 5, y - 1, 0);
   }
 }, true);
+// village streets, one per age: a beaten path, cobbles, tarmac
+def('path', (g, r) => { g.fill(1); for (let k = 0; k < 7; k++) g.set(Math.floor(r() * AW), 2 + Math.floor(r() * 12), 0); g.rect(0, 0, AW, 1, 0); }, true);
+def('cobble', (g) => {
+  g.fill(1);
+  for (const y of [0, 5, 10, 15]) g.rect(0, y, AW, 1, 0);
+  for (const [x, y] of [[2, 1], [7, 1], [0, 6], [5, 6], [3, 11], [8, 11]]) g.rect(x, y, 1, 4, 0);
+}, true);
+def('pave', (g) => { g.fill(1); g.rect(1, 3, 8, 1, 0); }, true);
+def('pave0', (g) => { g.fill(1); }, true);
 def('weave', (g) => { g.fill(1); for (let y = 0; y < AH; y++) for (let x = 0; x < AW; x++) if ((x + y) % 4 === 0) g.set(x, y, 0); }, true);
 def('panel', (g) => { g.fill(1); g.rect(0, 0, AW, 1, 0); g.rect(0, 0, 1, AH, 0); g.set(2, 2, 0); g.set(7, 2, 0); g.set(2, 13, 0); g.set(7, 13, 0); }, true);
 def('window', (g) => { g.rect(1, 2, 8, 12); g.rect(1, 7, 8, 1, 0); g.rect(4, 2, 2, 12, 0); g.rect(4, 2, 2, 12, 0); });

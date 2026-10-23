@@ -8,7 +8,7 @@ import { miracle } from './powers.js';
 import { acceptRequest, declineRequest, requestProgress } from './voices.js';
 import { fmt, clamp } from './util.js';
 import { portrait } from './sprites.js';
-import { toolIcon, hudIcon, watchFaithSymbols } from './icons.js';
+import { toolIcon, hudIcon, buildingIcon, watchFaithSymbols } from './icons.js';
 import { biography } from './lives.js';
 import { SEASONS, DAY } from './weather.js';
 
@@ -66,7 +66,7 @@ export function buildUI() {
   ui.append(
     h('div', '', `
     <div id="top">
-      <div id="brand" class="frame"><div class="logo">GENESIS<i>.TXT</i><span class="cur">_</span></div><div class="era"></div></div>
+      <div id="brand" class="frame"><div class="logo">GENESIS<i>.TXT</i><span class="cur">_</span></div><div class="eras"></div><div class="era"></div></div>
       <div id="clock" class="frame"><div class="date"></div><div class="time"></div><div class="bar"></div></div>
       <div id="res" class="frame"></div>
     </div>`).firstElementChild,
@@ -437,10 +437,38 @@ export function moodWord() {
   return t(hp > 0.75 ? 'happy' : hp > 0.5 ? 'content' : hp > 0.3 ? 'uneasy' : 'miserable');
 }
 
+// ── the road of eras, from the first fire to the stars ──
+function eraProgress(T) {
+  const nx = ERAS[T.era + 1];
+  if (!nx) return 1;
+  const homes = T.buildings.filter((b) => ['tent', 'hut', 'house', 'stonehouse', 'tower'].includes(b.kind)).length;
+  const parts = [T.villagers.length / nx.pop, isSandbox() ? 1 : G.progress.faith / Math.max(1, nx.faith)];
+  if (nx.houses) parts.push(homes / nx.houses);
+  return clamp(Math.min(...parts), 0, 1);
+}
+let erasKey = '';
+function renderEras(T) {
+  const p = eraProgress(T);
+  const pct = Math.floor(p * 100);
+  const key = T.era + ':' + pct + ':' + G.settings.lang;
+  if (key === erasKey) return;
+  erasKey = key;
+  let html = '';
+  for (let e = 0; e < ERAS.length; e++) {
+    if (e) html += `<b class="seg ${e === T.era + 1 ? 'go' : ''}"><s style="width:${e <= T.era ? 100 : e === T.era + 1 ? pct : 0}%"></s></b>`;
+    html += `<i class="n ${e < T.era ? 'done' : e === T.era ? 'cur' : ''}" title="${t('eraWord')} ${ROMAN[e]} · ${t('era' + e)}"></i>`;
+  }
+  const box = $('#brand .eras');
+  box.innerHTML = html;
+  box.onclick = () => togglePanel('civ');
+  const nx = ERAS[T.era + 1];
+  $('#brand .era').innerHTML = `${t('eraWord')} ${ROMAN[T.era]} · ${t('era' + T.era)}` + (nx ? `<span class="nx"> → ${t(nx.key)} ${pct}%</span>` : '');
+}
+
 export function updateHUD(force = false) {
   const env = G.env, T = G.tribe, P = G.progress;
   if (!env || !T) return;
-  $('#brand .era').textContent = `${t('eraWord')} ${ROMAN[T.era]} · ${t('era' + T.era)}`;
+  renderEras(T);
   const hh = Math.floor(env.tod * 24), mm = Math.floor((env.tod * 24 - hh) * 60);
   const wk = env.temp < 0 && env.raining ? 'snow' : env.weather;
   $('#clock .date').textContent = `${t('year')} ${env.year} · ${t(SEASONS[env.season])} · ${t('day')} ${env.day + 1}`;
@@ -579,6 +607,57 @@ export function banner(k, title, desc, button, onBtn, ms = 4200) {
   scramble(b.querySelector('.h'), title, 1400);
   if (button) b.querySelector('button').onclick = () => { b.classList.remove('show'); onBtn && onBtn(); };
   else setTimeout(() => b.classList.remove('show'), ms);
+}
+
+// ── what a new era brings ──
+const ERA_NEWS = [
+  null,
+  {
+    f: ['Autour du feu, des familles deviennent une tribu.', 'Around the fire, families become a tribe.'],
+    b: [['hut', 'Huttes', 'Huts', 3], ['temple', 'Temple', 'Temple', 0]],
+    l: [['prient au temple : bien plus de foi', 'pray at the temple: far more faith'], ['taillent la pierre', 'quarry stone'], ['chassent le gibier à la lance', 'hunt game with spears']],
+  },
+  {
+    f: ['Les tentes cèdent la place aux maisons : voici le village.', 'Tents give way to houses: here is the village.'],
+    b: [['house', 'Maisons', 'Houses', 4], ['farm', 'Champs', 'Fields', 0]],
+    l: [['rebâtissent les huttes en maisons', 'rebuild the huts into houses'], ['cultivent des champs', 'farm the fields'], ['tracent des chemins', 'lay down paths']],
+  },
+  {
+    f: ['La pierre et le métal : la cité s\'élève.', 'Stone and metal: the city rises.'],
+    b: [['stonehouse', 'Maisons de pierre', 'Stone houses', 6], ['lamp', 'Réverbères', 'Street lamps', 0]],
+    l: [['extraient le métal', 'mine metal'], ['pavent les rues', 'pave the streets'], ['éclairent la ville la nuit', 'light the city at night']],
+  },
+  {
+    f: ['Des tours de verre et des lumières qui ne s\'éteignent jamais.', 'Glass towers and lights that never go out.'],
+    b: [['tower', 'Tours', 'Towers', 12]],
+    l: [['dressent des tours de verre', 'raise glass towers'], ['goudronnent les avenues', 'tar the avenues'], ['font briller la ville toute la nuit', 'make the city glow all night']],
+  },
+  {
+    f: ['Le ciel n\'est plus une limite.', 'The sky is no longer the limit.'],
+    b: [['rocket', 'La fusée', 'The rocket', 0]],
+    l: [['construisent la fusée', 'build the rocket'], ['attendent ton signal pour le lancement', 'wait for your signal to launch']],
+  },
+];
+
+export function eraCard(e, gifts = []) {
+  const N = ERA_NEWS[e];
+  if (!N) return;
+  const fr = G.settings.lang === 'fr';
+  const L = (pair) => pair[fr ? 0 : 1];
+  let card = $('#eracard');
+  if (!card) { card = h('div', 'frame'); card.id = 'eracard'; $('#ui').append(card); }
+  const giftsHTML = gifts.length
+    ? `<h3>${fr ? 'NOUVEAUX POUVOIRS' : 'NEW POWERS'}</h3><div class="gifts">${gifts.map((id) => `<span class="gi"><img alt="" src="${toolIcon(TOOL[id])}">${tr(TOOL[id].n)}</span>`).join('')}</div>`
+    : '';
+  card.innerHTML = `<div class="k">${t('eraWord')} ${ROMAN[e]}</div><div class="h">${t('era' + e)}</div><div class="f">${L(N.f)}</div>
+    ${giftsHTML}
+    <h3>${fr ? 'LA TRIBU BÂTIT' : 'THE TRIBE BUILDS'}</h3><div class="blds">${N.b.map(([k, a, b, cap]) => `<span class="bi"><img alt="" src="${buildingIcon(k)}"><span>${fr ? a : b}${cap ? `<em>${cap} ${fr ? 'hab.' : 'people'}</em>` : ''}</span></span>`).join('')}</div>
+    <h3>${fr ? 'LA TRIBU APPREND À…' : 'THE TRIBE LEARNS TO…'}</h3><ul>${N.l.map((x) => `<li>${L(x)}</li>`).join('')}</ul>
+    <button class="bt gold">${fr ? 'CONTINUER' : 'CONTINUE'}</button>`;
+  card.classList.remove('show');
+  void card.offsetWidth;
+  card.classList.add('show');
+  card.querySelector('button').onclick = () => card.classList.remove('show');
 }
 
 // ── a villager speaks to you directly ──

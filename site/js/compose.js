@@ -115,10 +115,35 @@ function put(o, gl, fr, fgc, fb, br, bgc, bb, self, er, eg, eb, sky, ti = 0, bit
 const shoot = []; // shooting stars (screen space)
 let lastFrameT = 0;
 
+// village streets: a beaten path in the village age, cobbles in the city, tarmac after
+let streetKey = '', STREET = null;
+function streets(W) {
+  const T = G.tribe;
+  if (!T || T.era < 2) return null;
+  const key = T.era + ':' + T.nextB + ':' + T.buildings.length + ':' + W.w;
+  if (key === streetKey) return STREET;
+  streetKey = key;
+  STREET = new Uint8Array(W.w);
+  const lv = T.era >= 4 ? 3 : T.era >= 3 ? 2 : 1;
+  // neighbouring buildings are joined by a street; lone ones get a short stretch
+  const segs = T.buildings.filter((b) => b.kind !== 'farm').map((b) => [b.x - 2, b.x + b.w + 1]).sort((p, q) => p[0] - q[0]);
+  let cur = null;
+  for (const sg of segs) {
+    if (cur && sg[0] <= cur[1] + 8) cur[1] = Math.max(cur[1], sg[1]);
+    else { if (cur) STREET.fill(lv, Math.max(0, cur[0]), Math.min(W.w, cur[1] + 1)); cur = [...sg]; }
+  }
+  if (cur) STREET.fill(lv, Math.max(0, cur[0]), Math.min(W.w, cur[1] + 1));
+  for (const b of T.buildings) if (b.kind === 'farm') STREET.fill(0, Math.max(0, b.x - 1), Math.min(W.w, b.x + b.w + 1));
+  return STREET;
+}
+const STREET_ON = new Uint8Array(64);
+for (const e of [E.GRASS, E.DIRT, E.SAND, E.SNOW, E.STONE, E.ASH]) STREET_ON[e] = 1;
+
 export function compose(view, time) {
   const W = G.world, env = G.env;
   FG = R.fg; BG = R.bg; EM = R.em; TI = R.ti; cols = R.cols; rows = R.rows;
   PIX = G.settings.pixel !== false;
+  const ST = PIX ? streets(W) : null;
   LF = R.leaf;
   LF.fill(0);
   const { w, h, t, d, v, a, c } = W;
@@ -657,6 +682,13 @@ export function compose(view, time) {
               r2 = br; g2 = bgc; b2 = bb; self = bself === SELF ? SELF_BG : 0; skyC = sky;
               ti = 0; rim = 0; bits = 0;
             }
+          }
+          // the village street
+          if (ti && ST && ST[wx] && (bits & 1) && STREET_ON[tt] && wy === surf[wx]) {
+            const lv = ST[wx];
+            if (lv === 1) { ti = TILE.path; fr = 166; fgc = 128; fb = 84; r2 = 110; g2 = 78; b2 = 48; }
+            else if (lv === 2) { ti = TILE.cobble; fr = 170; fgc = 168; fb = 176; r2 = 84; g2 = 82; b2 = 92; }
+            else { ti = wx % 3 ? TILE.pave0 : TILE.pave; fr = 72; fgc = 74; fb = 84; r2 = 232; g2 = 210; b2 = 120; }
           }
         } else {
           switch (tt) {

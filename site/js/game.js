@@ -11,7 +11,7 @@ import { createProgress, DISCOVERIES, spend, LAUNCH_COST, isSandbox, TOOL } from
 import { setFxPut, spawnFx, floatText } from './fx.js';
 import { overlayGlyph, overlayText, tintCell } from './compose.js';
 import { loadGame, saveGame, clearSave, saveSettings } from './save.js';
-import { toast, logLine, banner, hint, UI, refreshTools, togglePanel, showTransmission } from './ui.js';
+import { toast, logLine, banner, hint, UI, refreshTools, togglePanel, showTransmission, eraCard } from './ui.js';
 import { welcomeBack } from './voices.js';
 import { IN } from './input.js';
 import { fmt } from './util.js';
@@ -42,6 +42,21 @@ export function newGame(mode, onProgress) {
   G.fx = [];
   G.newWorld = true;
   return W;
+}
+
+// frame the whole village
+function flyToVillage() {
+  const T = G.tribe, W = G.world, cam = G.cam;
+  if (!T || !W) return;
+  const homes = T.buildings.length ? T.buildings : [{ x: Math.round(T.center), w: 1 }];
+  const x0 = Math.min(...homes.map((b) => b.x)), x1 = Math.max(...homes.map((b) => b.x + b.w));
+  const span = Math.max(30, x1 - x0 + 24);
+  const z1 = Math.max(0.8, Math.min(2.2, window.innerWidth / (10 * span)));
+  const cx = (x0 + x1) / 2;
+  const tx = cx - window.innerWidth / (10 * z1) / 2;
+  const ty = W.surf[Math.round(cx)] - (window.innerHeight / (16 * z1)) * 0.62;
+  cam.follow = null;
+  cam.tween = { t: 0, dur: 1.8, x0: cam.x, y0: cam.y, z0: cam.zoom, x1: tx, y1: ty, z1 };
 }
 
 export function resumeGame() {
@@ -159,11 +174,13 @@ export function wireEvents() {
     sfx('era');
     G.flash = 0.8; G.flashColor = [1, 0.85, 0.5]; G.glitch = 0.6;
     for (const v of G.tribe.villagers) say(v, '✦', 160);
-    if (gifts && gifts.length) {
-      const names = gifts.map((id) => tr(TOOL[id].n)).join(' · ');
-      setTimeout(() => toast('achieve', fr() ? '✦ NOUVEAUX POUVOIRS ✦' : '✦ NEW POWERS ✦', names, fr() ? 'offerts par cette ère' : 'gifts of this era'), 2600);
-      logLine('✦ ' + names, true, '#ffd27a');
+    if (gifts && gifts.length) logLine('✦ ' + gifts.map((id) => tr(TOOL[id].n)).join(' · '), true, '#ffd27a');
+    // the eye of the god turns to the village, and a wave of light runs through it
+    flyToVillage();
+    for (const b of G.tribe.buildings) {
+      for (let k = 0; k < 3 + (b.w >> 1); k++) spawnFx({ x: b.x + Math.random() * b.w, y: b.y + Math.random() * b.h, vy: -0.05 - Math.random() * 0.05, life: 80 + Math.random() * 90, glyph: '✦', color: [255, 220, 130], glow: 0.7, up: true });
     }
+    setTimeout(() => eraCard(e, gifts || []), 3600);
     refreshTools();
   });
   on('weather', (w) => {

@@ -26,8 +26,8 @@ export const BUILDINGS = {
   camp: { cap: 0, cost: {}, rows: ['^'], mats: ['f'] },
   tent: { cap: 2, cost: { wood: 3 }, rows: ['  ▲  ', ' ╱▒╲ ', '╱▒∩▒╲'], mats: ['  c  ', ' ccc ', 'ccdcc'] },
   hut: { cap: 3, cost: { wood: 6 }, rows: [' ▄▄▄ ', '◢▓▓▓◣', '│□∩□│'], mats: [' rrr ', 'rrrrr', 'wgdgw'], thatch: true },
-  house: { cap: 4, cost: { wood: 6, stone: 5 }, rows: ['  ◢◣  ', ' ◢██◣ ', '◢████◣', '█□██□█', '█▓∩∩▓█'], mats: ['  rr  ', ' rrrr ', 'rrrrrr', 'wgwwgw', 'wwddww'] },
-  stonehouse: { cap: 6, cost: { wood: 4, stone: 12 }, rows: ['  ◢█◣  ', ' ◢███◣ ', '◢█████◣', '█□█□█□█', '█□█□█□█', '█▓█∩█▓█'], mats: ['  rrr  ', ' rrrrr ', 'rrrrrrr', 'sgsgsgs', 'sgsgsgs', 'sssdsss'] },
+  house: { cap: 4, cost: { wood: 6, stone: 5 }, rows: ['  ◢◣█ ', ' ◢██◣ ', '◢████◣', '█□██□█', '█▓∩∩▓█'], mats: ['  rrb ', ' rrrr ', 'rrrrrr', 'wgwwgw', 'wwddww'], chimney: 4 },
+  stonehouse: { cap: 6, cost: { wood: 4, stone: 12 }, rows: ['  ◢█◣█ ', ' ◢███◣ ', '◢█████◣', '█□█□█□█', '█□█□█□█', '█▓█∩█▓█'], mats: ['  rrrb ', ' rrrrr ', 'rrrrrrr', 'sgsgsgs', 'sgsgsgs', 'sssdsss'], chimney: 5 },
   tower: {
     cap: 12, cost: { stone: 12, metal: 8 },
     rows: ['  │  ', ' ▄█▄ ', '█▪▪▪█', '█▪▪▪█', '█▪▪▪█', '█▪▪▪█', '█▪▪▪█', '█▪▪▪█', '█▪▪▪█', '█▓∩▓█'],
@@ -536,8 +536,10 @@ function assign(v) {
   } else if (job === 'build') {
     const kind = T.building;
     if (kind && afford(BUILDINGS[kind].cost)) {
+      const renew = T.renew;
+      T.renew = false;
       // no room in the village: look further out, up and down the hills
-      const site = findSite(kind, T.center) || (kind !== 'lamp' ? findSite(kind, T.center, 160, 0, 26) : null);
+      const site = renew ? null : findSite(kind, T.center) || (kind !== 'lamp' ? findSite(kind, T.center, 160, 0, 26) : null);
       if (site) {
         pay(BUILDINGS[kind].cost);
         v.site = { kind, ...site };
@@ -545,8 +547,7 @@ function assign(v) {
         walkTo(v, site.x + (site.bw >> 1), site.y, 'build', 2);
         return;
       }
-      T.blocked = (T.blocked || 0) + 1;
-      dbg('nosite:' + kind);
+      if (!renew) { T.blocked = (T.blocked || 0) + 1; dbg('nosite:' + kind); }
       // no free land: replace the oldest, humblest dwelling with a better one
       let up = null, s2 = null;
       for (const b of TIER[kind] ? humblerThan(TIER[kind]) : []) {
@@ -562,7 +563,7 @@ function assign(v) {
         return;
       }
       // nowhere to put it: try something else for a while
-      (T.skip || (T.skip = {}))[kind] = G.env.time + 4000;
+      (T.skip || (T.skip = {}))[renew ? 'renew' : kind] = G.env.time + 4000;
       T.building = null;
     }
     v.job = 'idle';
@@ -947,6 +948,17 @@ export function updateLife() {
     }
   }
 
+  // smoke from the chimneys, thicker on cold days
+  if ((tick & 31) === 0) {
+    const cold = env.temp < 8 || env.night ? 2 : 1;
+    for (const b of T.buildings) {
+      const B = BUILDINGS[b.kind];
+      if (!B || (B.chimney === undefined && b.kind !== 'hut') || Math.random() > 0.1 * cold) continue;
+      const x = b.x + (B.chimney ?? (b.w >> 1)) + 0.3;
+      spawnFx({ x, y: b.y - 1, vx: 0.008 + Math.random() * 0.02, vy: -0.025 - Math.random() * 0.02, life: 120 + Math.random() * 80, glyph: Math.random() < 0.6 ? '░' : '▒', color: [196, 196, 206], up: true });
+    }
+  }
+
   // faith sparks
   if ((tick & 7) === 0) {
     for (const v of T.villagers) {
@@ -1122,11 +1134,18 @@ function nextBuilding(T, pop, cap) {
   if (e >= 2 && countB('farm') < Math.ceil(pop / 6)) list.push('farm');
   if (rocketTime) list.unshift('rocket');
   if (e >= 1 && !has('temple') && pop >= 5) list.unshift('temple'); // the first temple comes before anything else
+  // a new era rebuilds the dwellings of the old days in its own style
+  const home = ERAS[e].house;
+  const renew = pop < cap - 1 && T.buildings.some((b) => TIER[b.kind] && TIER[b.kind] < TIER[home]) && !(T.skip && T.skip.renew > G.env.time);
+  if (renew) list.push('renew');
   if (e >= 3 && countB('lamp') < Math.floor(T.buildings.length / 3)) list.push('lamp');
   const ok = list.filter((k) => !(T.skip && T.skip[k] > G.env.time));
   if (!ok.length) return null;
   // build what we can afford now; otherwise aim for the most important
-  return ok.find((k) => afford(BUILDINGS[k].cost)) || ok[0];
+  const kindOf = (k) => (k === 'renew' ? home : k);
+  const pick = ok.find((k) => afford(BUILDINGS[kindOf(k)].cost)) || ok[0];
+  T.renew = pick === 'renew';
+  return kindOf(pick);
 }
 
 // ── wild ecosystem ─────────────────────────────────────────────────────────

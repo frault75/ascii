@@ -352,3 +352,38 @@ pre.help { margin: 0; white-space: pre-wrap; font: inherit; font-size: 11px; col
 .bio .bi { display: inline-block; width: 14px; color: var(--dim); }
 .gr { display: flex; font-size: 11px; padding: 1px 0; }
 .gr .j { color: var(--dim); margin-left: auto; font-size: 10px; }
+
+/* ── the road of eras ── */
+#brand .eras { display: flex; align-items: center; margin-top: 7px; cursor: pointer; padding: 2px 0; }
+#brand .eras .n { width: 8px; height: 8px; flex: none; transform: rotate(45deg); border: 1px solid var(--faint); background: var(--bg); }
+#brand .eras .n.done { background: var(--cyan); border-color: var(--cyan); }
+#brand .eras .n.cur { background: var(--amber); border-color: var(--amber); box-shadow: var(--glow); animation: eraBeat 2.4s ease-in-out infinite; }
+@keyframes eraBeat { 50% { box-shadow: 0 0 2px rgba(255, 207, 90, .3); } }
+#brand .eras .seg { flex: 1; min-width: 10px; height: 2px; margin: 0 2px; background: var(--line); position: relative; overflow: hidden; }
+#brand .eras .seg s { position: absolute; left: 0; top: 0; bottom: 0; background: var(--cyan); text-decoration: none; }
+#brand .eras .seg.go s { background: var(--amber); box-shadow: var(--glow); }
+#brand .era .nx { color: var(--dim); letter-spacing: .08em; }
+
+/* ── a new era: what changes ── */
+#eracard { position: fixed; left: 50%; top: 50%; z-index: 16; width: min(500px, calc(100vw - 24px)); max-height: calc(100vh - 40px); overflow-y: auto;
+  transform: translate(-50%, -50%); padding: 18px 20px 16px; display: none; background: var(--panel2); text-align: left; overscroll-behavior: contain; touch-action: pan-y; }
+#eracard.show { display: block; animation: eraIn .7s cubic-bezier(.2, .9, .3, 1.2); }
+@keyframes eraIn { from { opacity: 0; transform: translate(-50%, -46%) scale(.94); } }
+#eracard .k { font-size: 10px; letter-spacing: .5em; color: var(--dim); text-align: center; }
+#eracard .h { font-size: 24px; font-weight: 800; letter-spacing: .12em; color: var(--amber); text-shadow: var(--glow); text-align: center; margin: 4px 0 6px; }
+#eracard .f { text-align: center; color: var(--ink); opacity: .85; font-style: italic; margin-bottom: 6px; }
+#eracard h3 { margin: 14px 0 7px; font-size: 10px; letter-spacing: .25em; color: var(--cyan); font-weight: 500; }
+#eracard .gifts, #eracard .blds { display: flex; flex-wrap: wrap; gap: 6px; }
+#eracard .gi, #eracard .bi { display: inline-flex; align-items: center; gap: 6px; padding: 4px 8px 4px 5px; border: 1px solid var(--line); background: rgba(255, 255, 255, .03); }
+#eracard .gi img, #eracard .bi img { width: 20px; height: 20px; image-rendering: pixelated; }
+#eracard .bi img { width: 32px; height: 32px; }
+#eracard .bi em { display: block; font-style: normal; font-size: 10px; color: var(--dim); }
+#eracard ul { margin: 0; padding-left: 18px; }
+#eracard li { margin: 3px 0; }
+#eracard li::marker { content: '✦  '; color: var(--amber); }
+#eracard .bt { display: block; margin: 16px auto 0; min-width: 160px; }
+@media (max-width: 860px) {
+  #brand .era .nx { display: none; }
+  #eracard { padding: 14px 14px 12px; }
+  #eracard .h { font-size: 20px; }
+}
