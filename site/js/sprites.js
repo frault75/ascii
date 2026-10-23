@@ -581,11 +581,14 @@ const hash = (n) => {
   return (h ^ (h >>> 16)) >>> 0;
 };
 // a villager's palette: [skin, cloth, hair, pants, wood, metal] + head style
+export function hairOf(v) {
+  return v.hair ?? (hash(v.id + 1) >>> 4) % HAIRS.length;
+}
 export function lookOf(v, era = 0) {
   const h = hash(v.id + 1);
   let style = h % STYLES;
   if (v.kid && style === 4) style = 0;
-  let hair = HAIRS[(h >>> 4) % HAIRS.length];
+  let hair = HAIRS[hairOf(v) % HAIRS.length];
   if (v.age >= 10 && !v.kid) hair = [208, 206, 214];
   return {
     style,

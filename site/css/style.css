@@ -20,6 +20,8 @@
 * { box-sizing: border-box; }
 html, body {
   margin: 0; height: 100%; overflow: hidden; background: var(--bg); color: var(--ink);
+  /* the page itself never scrolls, bounces, refreshes or swipes back: only the game moves */
+  overscroll-behavior: none; position: fixed; inset: 0; width: 100%; -webkit-touch-callout: none; -webkit-text-size-adjust: 100%;
   font-family: var(--font); font-size: 12px; line-height: 1.35; -webkit-font-smoothing: antialiased;
   user-select: none; -webkit-user-select: none; touch-action: none; -webkit-tap-highlight-color: transparent;
 }
@@ -190,6 +192,8 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   display: none; background: var(--panel2); scrollbar-width: thin; scrollbar-color: var(--faint) transparent;
 }
 .panel.show { display: block; animation: panelIn .25s ease; }
+.panel, #tools, #cats { touch-action: pan-y; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+#tools, #cats { touch-action: pan-x; }
 @keyframes panelIn { from { opacity: 0; transform: translateX(10px); } }
 .panel .x { position: absolute; top: 8px; right: 10px; color: var(--dim); font-size: 13px; }
 .panel .x:hover { color: var(--red); }
@@ -335,3 +339,16 @@ pre.help { margin: 0; white-space: pre-wrap; font: inherit; font-size: 11px; col
 }
 
 .nbi { width: 16px; height: 16px; display: block; margin: 0 auto 2px; }
+
+/* ── lives ── */
+.vl.sel { color: var(--amber); }
+.vl .love { color: #ff8ab8; }
+.bio { display: flex; gap: 10px; align-items: flex-start; margin: 10px 0 4px; padding: 8px; border: 1px solid color-mix(in srgb, var(--vc, #888) 50%, transparent); background: rgba(255, 255, 255, .03); }
+.bio.dim { display: block; border-style: dashed; font-size: 11px; }
+.bio .bp { width: 56px; height: 56px; flex: none; image-rendering: auto; background: radial-gradient(circle at 50% 40%, color-mix(in srgb, var(--vc) 30%, #0b1018), #05070c 75%); }
+.bio .bt2 { min-width: 0; font-size: 11px; line-height: 1.5; }
+.bio .bt2 b { color: var(--vc); font-size: 13px; }
+.bio .bl { color: var(--ink); }
+.bio .bi { display: inline-block; width: 14px; color: var(--dim); }
+.gr { display: flex; font-size: 11px; padding: 1px 0; }
+.gr .j { color: var(--dim); margin-left: auto; font-size: 10px; }

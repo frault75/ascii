@@ -47,6 +47,8 @@ const S = {
   copied: ['copié dans le presse-papiers', 'copied to clipboard'],
   // settings
   sCrt: ['effet CRT', 'CRT effect'], sBloom: ['halo lumineux', 'bloom'], sVolume: ['volume', 'volume'], sMusic: ['musique', 'music'], sSfx: ['effets', 'effects'],
+  backTrap: ['Ton monde est sauvegardé. Pour quitter, ferme l\'onglet.', 'Your world is saved. To leave, close the tab.'],
+  installHint: ['Plein écran : Partager → « Sur l\'écran d\'accueil », puis lance GENESIS depuis l\'icône.', 'Fullscreen: Share → "Add to Home Screen", then launch GENESIS from the icon.'],
   sLang: ['langue', 'language'], sHints: ['astuces', 'hints'], sLook: ['rendu', 'look'], sNew: ['nouveau monde', 'new world'], sExport: ['exporter en .txt', 'export as .txt'],
   sPhoto: ['photo (.png)', 'photo (.png)'], sReset: ['effacer la sauvegarde', 'erase save'], sMode: ['mode', 'mode'],
   confirmNew: ['Créer un nouveau monde ? Le monde actuel sera perdu.', 'Create a new world? The current one will be lost.'],

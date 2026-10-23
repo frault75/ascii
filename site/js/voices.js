@@ -128,7 +128,29 @@ const nearVillage = (el, r = 40) => {
   return n;
 };
 
+// the newest grave nobody has planted a tree for yet
+const recentGrave = (T) => (T.graves || []).slice().reverse().find((g) => g.x >= 0 && !g.tree && G.env.day - g.day <= 1);
+const treeNear = (g) => {
+  const W = G.world;
+  for (let x = g.x - 7; x <= g.x + 7; x++) for (let y = g.y - 14; y <= g.y + 1; y++) {
+    if (x < 1 || y < 1 || x >= W.w - 1 || y >= W.h - 1) continue;
+    const tt = W.t[y * W.w + x];
+    if (tt === E.SAPLING || tt === E.WOOD) return true;
+  }
+  return false;
+};
+
 const REQUESTS = {
+  memorial: {
+    when: (T) => T.era >= 1 && !!recentGrave(T) && !treeNear(recentGrave(T)),
+    who: (T) => { const g = recentGrave(T); return T.villagers.find((v) => v.name === g.partner) || T.villagers.find((v) => v.lost === g.name); },
+    say: (T) => {
+      const n = recentGrave(T).name;
+      return [[`Plante un arbre près de la tombe de ${n}. Pour qu'on se souvienne.`, `${n} aimait l'ombre des arbres. Fais-en pousser un, là où ${n} repose ?`], [`Plant a tree by ${n}'s grave. So we remember.`, `${n} loved the shade of trees. Will you grow one where ${n} rests?`]];
+    },
+    key: ['souvenir', 'memory'], goal: () => 1, start: (T) => recentGrave(T), prog: (g) => (g && treeNear(g) ? ((g.tree = true), 1) : 0),
+    unit: [['arbre du souvenir'], ['memory tree']], secs: 220,
+  },
   wood: {
     when: (T) => T.wood < 5 && nearVillage(E.WOOD, 45) < 30,
     say: [['Nos réserves de bois sont vides. Fais pousser des arbres près de nous ?', 'Il n\'y a plus d\'arbres autour du village. Plante-nous une forêt.'], ['Our wood stores are empty. Will you grow trees near us?', 'There are no trees left around the village. Plant us a forest.']],
@@ -272,6 +294,28 @@ on('death', (v, cause) => {
   const w = pick(near);
   if (w) setTimeout(() => talk(w, level() === 0 ? babble(fr() ? 'non' : 'no') : L(pick([`${v.name}!`, `Non! ${v.name}!`, 'Pourquoi?']), pick([`${v.name}!`, `No! ${v.name}!`, 'Why?']))), 600);
 });
+// love, loss and children: the moments they want you to see
+on('couple', (a, b) => {
+  if (level() >= 1) setTimeout(() => talk(a, L(pick([`${b.name}…`, `avec ${b.name}, enfin`, '♥']), pick([`${b.name}…`, `with ${b.name}, at last`, '♥']))), 1200);
+  else setTimeout(() => talk(a, '♥'), 1200);
+});
+on('widowed', (p, v) => {
+  const lv = level();
+  setTimeout(() => {
+    if (V.shown || !G.tribe.villagers.includes(p)) return;
+    if (lv === 0) { openTx(p, babble(fr() ? 'non' : 'no') + ' … ' + v.name + ' … †', null); return; }
+    const wolf = v.cause === 'wolf';
+    const lines = L([`${v.name} est parti·e. Tu regardais. Tu as tout vu.`, `Rends-moi ${v.name}. Tu peux tout, non ?`, `Pourquoi as-tu laissé faire ?`, `Je garderai la place de ${v.name} près du feu.`],
+      [`${v.name} is gone. You were watching. You saw everything.`, `Give ${v.name} back to me. You can do anything, can't you?`, `Why did you let it happen?`, `I will keep ${v.name}'s place by the fire.`]);
+    if (wolf) lines.push(L('Les loups. Est-ce toi qui les as faits ?', 'The wolves. Did you make them too?'));
+    openTx(p, pick(lines), null);
+  }, 3500);
+});
+on('death', (v, cause) => { v.cause = cause; });
+on('family', (kid, a) => {
+  if (level() < 1 || R() > 0.35) return;
+  setTimeout(() => { if (!V.shown && G.tribe.villagers.includes(a)) openTx(a, L(`Voici ${kid.name}. Veille sur ${kid.name}, s'il te plaît.`, `This is ${kid.name}. Please watch over ${kid.name}.`), null); }, 2500);
+});
 on('miracle', () => {
   V.thanks++;
   const v = speaker();
@@ -362,7 +406,8 @@ export function updateVoices(dt) {
     if (needs.length && R() < 0.8) {
       const [id, r] = pick(needs);
       V.seen[id] = G.env.day;
-      openTx(v, pick(r.say[fr() ? 0 : 1]), { ...r, id });
+      const said = typeof r.say === 'function' ? r.say(T) : r.say;
+      openTx((r.who && r.who(T)) || v, pick(said[fr() ? 0 : 1]), { ...r, id });
     } else {
       const m = V.idleT > 120 && level() >= 1 ? L('Tu es encore là ? Le monde est silencieux quand tu ne fais rien.', 'Are you still there? The world goes quiet when you do nothing.') : musing();
       if (m) openTx(v, m, null);

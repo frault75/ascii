@@ -114,6 +114,10 @@ export function wireEvents() {
     if (!G.tribe.villagers.length) { logLine(t('logExtinct'), true, '#ff6a5a'); toast('warn', '', t('logExtinct')); }
   });
   // wildlife meets the tribe
+  // the story of the village
+  on('couple', (a, b) => logLine('♥ ' + (fr() ? `${a.name} et ${b.name} se sont trouvés.` : `${a.name} and ${b.name} found each other.`), false, '#ff9ac0'));
+  on('family', (kid, a, b) => logLine('✿ ' + (fr() ? `${kid.name} est né·e, enfant de ${a.name}${b ? ' et ' + b.name : ''}.` : `${kid.name} was born to ${a.name}${b ? ' and ' + b.name : ''}.`), false, '#ffc8e0'));
+  on('widowed', (p, v) => logLine('† ' + (fr() ? `${p.name} pleure ${v.name}.` : `${p.name} mourns ${v.name}.`), false, '#b8bccc'));
   on('wolfAttack', (a, v) => {
     emit('discover', 'wolves');
     sfx('growl', a.x, a.y);
@@ -316,6 +320,7 @@ function drawVillager(v, view, time, dt, W, hovered, followed) {
   else if (work === 'mine') body = pick(F.pick, sw);
   else if (work === 'build') body = pick(F.hammer, sw);
   else if (work === 'hunt') body = v.timer > 12 ? F.throw[0] : F.throw[1];
+  else if (work === 'mourn') body = F.idle[1];
   else if (work === 'pray') body = pick(F.pray, time * 1.2 + v.id);
   else if (work === 'fish') body = pick(F.fish, time * 0.8 + v.id);
   else if (work === 'gather' || work === 'forage') body = pick(F.gather, time * 2.4 + v.id);
@@ -331,7 +336,7 @@ function drawVillager(v, view, time, dt, W, hovered, followed) {
   const front = an.view === 'front';
   const blink = (time * 0.9 + v.id * 1.7) % 4.2 < 0.13;
   const mouth = (talking || calling) && Math.floor(time * 8 + v.id) % 2 === 0;
-  const shut = work === 'sleep' || work === 'pray' || blink;
+  const shut = work === 'sleep' || work === 'pray' || work === 'mourn' || blink;
   const ex = (front ? 3 : 0) + (shut ? 2 : mouth ? 1 : 0);
   const floor = followed || v === hovered ? 0.8 : T.era >= 3 && G.env.night ? 0.62 : 0.5;
   const pal = look.pal;

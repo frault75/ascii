@@ -19,6 +19,7 @@ import { newGame, resumeGame, wireEvents, drawOverlays, updateRocket, updateHint
 import { t } from './i18n.js';
 import { updateVoices } from './voices.js';
 import { updateFauna } from './fauna.js';
+import { updateLives } from './lives.js';
 import { clamp } from './util.js';
 
 const BASE_W = 10, BASE_H = 16;
@@ -125,6 +126,39 @@ function showMenu() {
   el.querySelectorAll('[data-l]').forEach((b) => (b.onclick = () => { G.settings.lang = b.dataset.l; emit('settings'); document.documentElement.lang = G.settings.lang; showMenu(); }));
 }
 
+// ── the page must never move under the player's fingers ─────────────────────
+// no page zoom (pinch, double tap, ctrl+wheel), no scrolling or pull-to-refresh,
+// no edge swipe back; panels and the tool strip keep their own scrolling
+const TOUCH = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+const stop = (e) => e.preventDefault();
+for (const ev of ['gesturestart', 'gesturechange', 'gestureend']) document.addEventListener(ev, stop, { passive: false });
+document.addEventListener('dblclick', stop, { passive: false });
+document.addEventListener('wheel', (e) => { if (e.ctrlKey) e.preventDefault(); }, { passive: false });
+document.addEventListener('touchmove', (e) => { if (e.touches.length > 1 || !e.target.closest('.panel, #tools, #cats')) e.preventDefault(); }, { passive: false });
+canvas.addEventListener('touchstart', (e) => {
+  const x = e.touches[0].clientX;
+  if (x < 32 || x > window.innerWidth - 32 || e.touches.length > 1) e.preventDefault();
+}, { passive: false });
+// the back gesture or button asks before leaving the world
+let trapped = false;
+function trapBack() {
+  if (trapped) return;
+  trapped = true;
+  history.pushState({ genesis: 1 }, '');
+  window.addEventListener('popstate', () => {
+    if (mode !== 'game') return;
+    history.pushState({ genesis: 1 }, '');
+    autosave();
+    toast('info', '', t('backTrap'), '');
+  });
+}
+function goFullscreen() {
+  if (!TOUCH || document.fullscreenElement) return;
+  const el = document.documentElement;
+  const req = el.requestFullscreen || el.webkitRequestFullscreen;
+  if (req) try { const p = req.call(el, { navigationUI: 'hide' }); if (p && p.catch) p.catch(() => {}); } catch (e) { /* not allowed */ }
+}
+
 window.addEventListener('keydown', (e) => {
   if (mode !== 'intro') return;
   const el = document.getElementById('intro');
@@ -146,6 +180,7 @@ let choosing = false;
 function choose(kind) {
   if (choosing) return;
   choosing = true;
+  goFullscreen();
   G.audio.init();
   G.audio.sfx('select');
   const el = document.getElementById('intro');
@@ -164,6 +199,9 @@ function choose(kind) {
 let inputReady = false;
 function startGame() {
   mode = 'game';
+  trapBack();
+  const standalone = window.matchMedia && window.matchMedia('(display-mode: fullscreen), (display-mode: standalone)').matches;
+  if (TOUCH && !standalone && !document.fullscreenElement && !document.documentElement.requestFullscreen) setTimeout(() => hint(t('installHint')), 9000);
   G.started = true;
   G.reveal = 0;
   G.flash = 0.5;
@@ -228,6 +266,7 @@ function simStep() {
   step();
   updateClouds();
   updateLife();
+  updateLives();
   updateEcology();
   updateFauna();
   updateEmitters();

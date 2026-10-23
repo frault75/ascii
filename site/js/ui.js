@@ -9,6 +9,7 @@ import { acceptRequest, declineRequest, requestProgress } from './voices.js';
 import { fmt, clamp } from './util.js';
 import { portrait } from './sprites.js';
 import { toolIcon, hudIcon, watchFaithSymbols } from './icons.js';
+import { biography } from './lives.js';
 import { SEASONS, DAY } from './weather.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -307,7 +308,7 @@ function civHTML() {
   const kinds = {};
   for (const b of T.buildings) kinds[b.kind] = (kinds[b.kind] || 0) + 1;
   const blist = Object.entries(kinds).map(([k, n]) => `<div class="row"><span class="l">${t('b_' + k)}</span><span class="v">×${n}</span></div>`).join('');
-  const vl = T.villagers.slice(0, 80).map((v) => `<div class="vl" data-v="${v.id}"><img class="pt" alt="" src="${portrait(v, T.era)}">${v.name}<span class="j">${v.kid ? t('kid') : t('job_' + v.job)} · ${v.age} ${t('days')}</span></div>`).join('');
+  const vl = T.villagers.slice(0, 80).map((v) => `<div class="vl ${G.cam.follow === v.id ? 'sel' : ''}" data-v="${v.id}"><img class="pt" alt="" src="${portrait(v, T.era)}">${v.name}${v.partner ? ' <span class="love">♥</span>' : ''}${v.lost ? ' <span class="dim">†</span>' : ''}<span class="j">${v.kid ? t('kid') : t('job_' + v.job)} · ${v.age} ${t('days')}</span></div>`).join('');
   let project = '';
   if (T.building && BUILDINGS[T.building]) {
     const cost = BUILDINGS[T.building].cost;
@@ -324,7 +325,28 @@ function civHTML() {
     ${project}
     ${next}
     <h3>${t('buildings')}</h3>${blist || '<div class="dim">—</div>'}
-    <h3>${t('villagers')}</h3>${vl || '<div class="dim">—</div>'}`;
+    ${bioHTML()}
+    <h3>${t('villagers')}</h3>${vl || '<div class="dim">—</div>'}
+    ${graveHTML()}`;
+}
+
+// the life of the villager you follow
+function bioHTML() {
+  const T = G.tribe;
+  const v = T.villagers.find((q) => q.id === G.cam.follow);
+  const fr = G.settings.lang === 'fr';
+  if (!v) return `<div class="bio dim">${fr ? 'Clique un villageois pour lire son histoire.' : 'Click a villager to read their story.'}</div>`;
+  const lines = biography(v).map(([i, s]) => `<div class="bl"><span class="bi">${i}</span>${s}</div>`).join('');
+  return `<div class="bio" style="--vc:rgb(${v.color})"><img class="bp" alt="" src="${portrait(v, T.era)}"><div class="bt2"><b>${v.name}</b><div class="dim">${v.kid ? t('kid') : t('job_' + v.job)} · ${t('age')} ${v.age} ${t('days')}</div>${lines || `<div class="bl dim">${fr ? 'Une vie qui commence.' : 'A life just beginning.'}</div>`}</div></div>`;
+}
+
+// the cemetery remembers everyone
+function graveHTML() {
+  const T = G.tribe;
+  const gs = (T.graves || []).slice(-12).reverse();
+  if (!gs.length) return '';
+  const fr = G.settings.lang === 'fr';
+  return `<h3>${fr ? 'Ils reposent ici' : 'Resting here'}</h3>` + gs.map((g) => `<div class="gr"><span class="gn" style="color:rgb(${g.color})">† ${g.name}</span><span class="j">${fr ? 'J' : 'D'}${g.day + 1} · ${t('cause_' + g.cause)}</span></div>`).join('');
 }
 
 function codexHTML() {
@@ -509,6 +531,8 @@ export function cellInfo(x, y) {
   if (tt === E.STRUCT) {
     const b = T.buildings.find((q) => q.id === W.a[y * W.w + x]);
     if (b) extra = ' · ' + t('b_' + b.kind);
+    const g = (T.graves || []).find((q) => q.x === x && Math.abs(q.y - y) <= 1);
+    if (g) return `<b style="color:rgb(${g.color})">† ${g.name}</b> · ${G.settings.lang === 'fr' ? 'jour' : 'day'} ${g.day + 1} · ${t('cause_' + g.cause)}${g.partner ? ` · ${G.settings.lang === 'fr' ? 'pleuré·e par' : 'mourned by'} ${g.partner}` : ''}`;
   }
   return `<span class="dim">[${x},${y}]</span> <b>${eln(tt)}</b>${extra}`;
 }

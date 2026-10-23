@@ -1,0 +1,14 @@
+{
+  "name": "GENESIS.TXT",
+  "short_name": "GENESIS",
+  "description": "Un monde vivant à faire grandir, de l'âge de pierre jusqu'aux étoiles.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "orientation": "any",
+  "background_color": "#05070c",
+  "theme_color": "#05070c",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

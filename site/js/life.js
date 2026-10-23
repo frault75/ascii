@@ -7,6 +7,7 @@ import { spawnFx, floatText } from './fx.js';
 import { gi } from './glyphs.js';
 import { DAY } from './weather.js';
 import { nearestPrey, animalById, killAnimal, KINDS } from './fauna.js';
+import { mournAt, deed } from './lives.js';
 
 // ── eras ───────────────────────────────────────────────────────────────────
 export const ERAS = [
@@ -174,10 +175,11 @@ export function findSite(kind, cx, radius = 90, ignoreId = 0) {
         const x = x0 + c;
         let y = Math.max(2, w.surf[x] - 24);
         const ign = (yy) => (ignoreId && t[yy * w.w + x] === E.STRUCT && w.a[yy * w.w + x] === ignoreId) || t[yy * w.w + x] === E.WOOD || t[yy * w.w + x] === E.SNOW || t[yy * w.w + x] === E.ASH;
-        while (y < w.h - 2 && (!STAND[t[y * w.w + x]] || ign(y))) {
-          const q = t[y * w.w + x];
-          if (q === E.WATER || q === E.LAVA || q === E.ACID || q === E.OIL) { ok = false; break; }
-          y++;
+        while (y < w.h - 2 && (!STAND[t[y * w.w + x]] || ign(y))) y++;
+        // a pond or a pool on the ground rules the column out (falling rain does not)
+        for (let k = 1; k <= 2; k++) {
+          const q = t[(y - k) * w.w + x];
+          if (q === E.WATER || q === E.LAVA || q === E.ACID || q === E.OIL) ok = false;
         }
         const g = t[y * w.w + x];
         if (g === E.STRUCT || g === E.ICE || g === E.TNT) ok = false;
@@ -426,6 +428,28 @@ function dig(v, dir) {
   return false;
 }
 
+// stuck under the target (at the bottom of a pit or a mine shaft): scale the nearest wall
+function climbOut(v) {
+  const w = W(), t = w.t, i = v.y * w.w + v.x, up = i - w.w;
+  if (v.y < 4 || (v.climb || 0) > 24) return false;
+  // a tunnel roof overhead: dig a way up through it
+  if (!canOccupy(t[up])) {
+    const tt = t[up];
+    if (tt !== E.DIRT && tt !== E.GRASS && tt !== E.SAND && tt !== E.SNOW && tt !== E.ASH && tt !== E.STONE && tt !== E.ICE) return false;
+    putCell(up, E.EMPTY);
+    return true;
+  }
+  // over the lip of the wall
+  for (const d of [v.dir, -v.dir]) {
+    if (!canOccupy(t[i + d]) && canOccupy(t[up + d])) { v.dir = d; v.x += d; v.y--; v.climb = 0; return true; }
+  }
+  // or up the wall alongside
+  for (const d of [v.dir, -v.dir]) {
+    if (!canOccupy(t[up + d])) { v.dir = d; v.y--; v.climb = (v.climb || 0) + 1; return true; }
+  }
+  return false;
+}
+
 // unreachable target: refund what was promised and deliver what is carried
 function giveUp(v) {
   const T = G.tribe;
@@ -433,7 +457,7 @@ function giveUp(v) {
   release(v);
   if (v.site) {
     for (const k in BUILDINGS[v.site.kind].cost) T[k] += BUILDINGS[v.site.kind].cost[k];
-    (T.bad || (T.bad = {}))[v.site.x] = G.env.day + 2;
+    for (let x = v.site.x - 3; x <= v.site.x + 3; x++) (T.bad || (T.bad = {}))[x] = G.env.day + 2;
     v.site = null;
   }
   if (v.carry) { T[v.carry] = (T[v.carry] || 0) + v.carryAmt; v.carry = null; v.carryAmt = 0; }
@@ -442,8 +466,9 @@ function giveUp(v) {
   v.stuck = 0;
 }
 
-function walkTo(v, tx, ty, then, reach = 1) {
+export function walkTo(v, tx, ty, then, reach = 1) {
   v.tx = tx; v.ty = ty; v.then = then; v.reach = reach; v.state = 'walk'; v.stuck = 0;
+  v.walkT = 160 + 3 * (Math.abs(tx - v.x) + Math.abs(ty - v.y));
 }
 
 function release(v) {
@@ -462,7 +487,7 @@ function assign(v) {
     const tg = scanNear(v.x, 70, P.tree, 16, 2);
     if (tg) { claim(v, tg); walkTo(v, tg.x, tg.y, 'chop'); return; }
   } else if (job === 'food') {
-    const tg = scanNear(v.x, 60, P.food, 18, 2);
+    const tg = scanNear(v.x, 60, P.food, 9, 2); // fruit within reach of the ground
     // hunters go after game when there is some about
     if (!v.kid && Math.random() < (tg ? 0.35 : 0.65)) {
       const prey = nearestPrey(v.x, v.y, 80);
@@ -616,6 +641,10 @@ function arrive(v) {
     case 'pray':
       v.state = 'work'; v.timer = 400; v.action = 'pray';
       return;
+    case 'mourn':
+      v.state = 'work'; v.timer = 220; v.action = 'mourn';
+      mournAt(v);
+      return;
     case 'enter': {
       const home = T.buildings.find((b) => b.id === v.home);
       if (home && G.env.night) { v.inside = true; v.state = 'inside'; return; }
@@ -637,7 +666,7 @@ function finishWork(v) {
     case 'chop': {
       const n = fell(v.ti);
       release(v);
-      if (n > 0) { v.carry = 'wood'; v.carryAmt = Math.max(1, Math.round(n / 3)); say(v, L('timber!', 'timber!'), 80); }
+      if (n > 0) { v.carry = 'wood'; v.carryAmt = Math.max(1, Math.round(n / 3)); deed(v, 'wood'); say(v, L('timber!', 'timber!'), 80); }
       break;
     }
     case 'gather': {
@@ -655,7 +684,7 @@ function finishWork(v) {
         const i = y * w.w + x;
         if (w.t[i] === E.FISH) { putCell(i, E.WATER); got = true; }
       }
-      if (got) { v.carry = 'food'; v.carryAmt = 3; say(v, '><>!', 90); }
+      if (got) { v.carry = 'food'; v.carryAmt = 3; deed(v, 'fish'); say(v, '><>!', 90); }
       else say(v, '...', 60);
       break;
     }
@@ -680,6 +709,7 @@ function finishWork(v) {
         }
         v.carry = kind;
         v.carryAmt = n;
+        deed(v, 'stone', n);
       }
       release(v);
       break;
@@ -688,8 +718,15 @@ function finishWork(v) {
       const s = v.site;
       v.site = null;
       if (s) {
-        const again = findSite(s.kind, s.x + (s.bw >> 1), 4);
-        if (again) { placeBuilding(s.kind, again.x, again.y); dbg('built:' + s.kind); }
+        // the ground may have changed a little (a puddle, a clod, a sapling): builders
+        // clear and level the footprint themselves, so only another structure stops them
+        const clash = (x0, y0) => T.buildings.some((b) => x0 < b.x + b.w + 1 && x0 + s.bw + 1 > b.x && y0 - s.bh + 1 < b.y + b.h + 2 && y0 + 1 > b.y - 2) || (() => {
+          for (let y = y0 - s.bh + 1; y <= y0; y++) for (let x = x0; x < x0 + s.bw; x++) if (w.t[y * w.w + x] === E.STRUCT) return true;
+          return false;
+        })();
+        let at = clash(s.x, s.y) ? null : { x: s.x, y: s.y };
+        if (!at) { const again = findSite(s.kind, s.x + (s.bw >> 1), 6); if (again && !clash(again.x, again.y)) at = again; }
+        if (at) { placeBuilding(s.kind, at.x, at.y); deed(v, 'built'); dbg('built:' + s.kind); }
         else { dbg('refund:' + s.kind); const T2 = G.tribe; for (const k in BUILDINGS[s.kind].cost) T2[k] += BUILDINGS[s.kind].cost[k]; }
       }
       v.job = 'idle';
@@ -697,6 +734,7 @@ function finishWork(v) {
     }
     case 'pray':
       emit('pray', v);
+      deed(v, 'pray');
       break;
     case 'hunt': {
       const prey = animalById(v.hunt);
@@ -706,6 +744,7 @@ function finishWork(v) {
         spawnFx({ x: v.x + v.dir, y: v.y - 1, vx: (prey.x - v.x) / 14, vy: -0.22, g: 0.03, life: 15, glyph: '/', color: [210, 170, 120] });
         if (Math.random() < 0.45 + T.era * 0.08) {
           killAnimal(prey, 'hunt');
+          deed(v, 'hunt');
           v.carry = 'food'; v.carryAmt = KINDS[prey.kind].food;
           say(v, pick(L(['dîner!', 'touché!', 'merci, bête'], ['dinner!', 'got it!', 'thank you, beast'])), 90);
           emit('discover', 'hunt');
@@ -801,6 +840,7 @@ export function updateLife() {
     const below = t[i + w.w];
     if (!STAND[below]) {
       const clinging = v.climb > 0 && !PASS[t[i + v.dir]] && v.state === 'walk';
+      if (!clinging && v.climb > 0) { v.climb = 0; v.descend = true; }
       if (!clinging && (PASS[below] || KIND[below] === K.LIQUID || DEADLY[below])) {
         if (v.descend) { if ((tick & 1) === 0) v.y++; continue; }
         v.y++;
@@ -849,6 +889,7 @@ export function updateLife() {
       continue;
     }
     if (v.state === 'walk') {
+      if (--v.walkT < 0) { giveUp(v); continue; }
       if (v.then === 'hunt') {
         const prey = animalById(v.hunt);
         if (!prey || Math.abs(prey.x - v.x) > 80) { v.hunt = 0; v.state = 'idle'; continue; }
@@ -857,6 +898,7 @@ export function updateLife() {
       const dx = v.tx - v.x;
       if (Math.abs(dx) <= v.reach) {
         if (Math.abs(v.ty - v.y) <= 4 || (Math.abs(v.ty - v.y) <= 10 && ++v.stuck > 6)) { v.stuck = 0; arrive(v); }
+        else if (v.ty < v.y && climbOut(v)) v.stuck = 0;
         else if (++v.stuck > 30) giveUp(v);
         continue;
       }

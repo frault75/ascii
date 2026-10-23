@@ -336,6 +336,10 @@ def('roundWin', (g) => { g.blob(5, 8, 3.6, 3.8); g.rect(4.5, 4, 1, 8, 0); });
 def('door', (g) => { g.rect(1, 6, 8, 10); g.blob(5, 6.5, 4, 4); g.rect(5, 3, 1, 13, 0); g.set(7, 11, 0); });
 def('vent', (g) => { for (const y of [3, 6, 9, 12]) g.rect(1, y, 8, 2); });
 def('fence', (g) => { g.rect(4, 2, 2, 14); g.rect(0, 6, AW, 1); g.rect(0, 11, AW, 1); });
+def('grave', (g) => {
+  g.rect(2, 7, 6, 9); g.blob(5, 7.5, 3, 3.2); g.rect(1, 15, 8, 1);
+  g.rect(4.5, 6, 1, 6, 0); g.rect(3, 8, 4, 1, 0);
+});
 def('pole', (g) => { g.rect(4, 0, 2, AH); });
 def('spire', (g) => { for (let y = 2; y < AH; y++) { const half = Math.max(0.5, ((y - 2) / 13) * 4.5); g.rect(Math.round(5 - half), y, Math.max(1, Math.round(half * 2)), 1); } });
 

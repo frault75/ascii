@@ -59,7 +59,9 @@ STRUCT_TEX[MAT.METAL] = TILE.panel; STRUCT_TEX[MAT.HULL] = TILE.panel; STRUCT_TE
 const WALL = new Uint8Array(256);
 for (const ch of '█▓▒') WALL[gi(ch)] = 1;
 const STRUCT_SHAPE = new Uint8Array(256);
-for (const [ch, name] of [['□', 'window'], ['∩', 'door'], ['▪', 'pane'], ['○', 'roundWin'], ['≡', 'vent'], ['¦', 'fence'], ['│', 'pole'], ['▲', 'spire'], ['✦', 'sparkle'], ['¡', 'torch'], ['ψ', 'crop4']]) STRUCT_SHAPE[gi(ch)] = TILE[name];
+for (const [ch, name] of [['□', 'window'], ['∩', 'door'], ['▪', 'pane'], ['○', 'roundWin'], ['≡', 'vent'], ['¦', 'fence'], ['│', 'pole'], ['▲', 'spire'], ['✦', 'sparkle'], ['¡', 'torch'], ['ψ', 'crop4'], ['†', 'grave']]) STRUCT_SHAPE[gi(ch)] = TILE[name];
+const SHAPE_SKY = new Uint8Array(256);
+for (const ch of '¦│▲✦¡ψ†') SHAPE_SKY[gi(ch)] = 1;
 const PARTIAL = new Uint8Array(256);
 for (const ch of '◢◣◤◥▄▀▲╱╲▖▗▘▝') PARTIAL[gi(ch)] = 1;
 const SKY_TILE = new Uint8Array(256);
@@ -763,7 +765,11 @@ export function compose(view, time) {
                   rim = 1;
                   bits = (t[i - w] !== E.STRUCT ? 1 : 0) | (t[i + 1] !== E.STRUCT ? 2 : 0) | (t[i + w] !== E.STRUCT && OPEN[t[i + w]] ? 4 : 0) | (t[i - 1] !== E.STRUCT ? 8 : 0);
                 }
-              } else if (STRUCT_SHAPE[gl]) ti = STRUCT_SHAPE[gl];
+              } else if (STRUCT_SHAPE[gl]) {
+                ti = STRUCT_SHAPE[gl];
+                // free-standing shapes (posts, crops, graves) stand against the sky
+                if (SHAPE_SKY[gl]) { r2 = br; g2 = bgc; b2 = bb; self = (self & 0xf0) | (bself === SELF ? SELF_BG : 0); skyC = sky; }
+              }
               else if (PARTIAL[gl]) {
                 if (gl === g.fs) gl = G_LR; else if (gl === g.bs) gl = G_LL;
                 r2 = br; g2 = bgc; b2 = bb; self = (self & 0xf0) | (bself === SELF ? SELF_BG : 0); skyC = sky;
