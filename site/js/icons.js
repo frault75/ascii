@@ -2,7 +2,7 @@
 // Each icon is drawn on a 16×16 grid, gets an automatic dark outline and is
 // cached as a data URL. The faith symbol in any interface text is swapped
 // for a drawn gem so that "120◊" can no longer be read as "1200".
-import { portrait } from './sprites.js';
+import { portrait, animalIcon } from './sprites.js';
 
 const S = 16;
 const hex = (h) => { const n = parseInt(h.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; };
@@ -124,6 +124,7 @@ export function toolIcon(tl) {
   if (cache.has(tl.id)) return cache.get(tl.id);
   let url;
   if (tl.id === 'spark') url = portrait({ id: 7, color: [255, 207, 90], skin: [241, 194, 125], age: 2 });
+  else if (tl.animal) url = animalIcon(tl.animal);
   else {
     const g = new Pix();
     (DRAW[tl.id] || ((gg, c) => gg.disc(8, 8, 5, c)))(g, hex(tl.c));
@@ -135,7 +136,7 @@ export function toolIcon(tl) {
 
 // resources and counters in the HUD
 const HUD = {
-  faith: (g) => { g.poly([[8, 0], [14, 6], [8, 16], [2, 6]], [120, 230, 255]); g.poly([[8, 0], [8, 16], [2, 6]], [70, 180, 240]); g.poly([[4, 5], [8, 1], [12, 5]], [210, 250, 255]); },
+  faith: (g) => { g.poly([[4, 2], [12, 2], [16, 7], [8, 15], [0, 7]], [100, 220, 255]); g.poly([[0, 7], [16, 7], [8, 15]], [60, 170, 235]); g.poly([[4, 2], [12, 2], [10, 7], [6, 7]], [215, 252, 255]); g.px(5, 3, [255, 255, 255]); },
   people: (g) => { g.disc(5, 5, 2.6, [241, 194, 125]); g.rect(2, 9, 6, 6, [255, 120, 90]); g.disc(11, 5, 2.6, [198, 134, 66]); g.rect(8, 9, 6, 6, [90, 160, 255]); },
   food: (g) => { g.disc(8, 9.5, 5.5, [232, 70, 60]); g.line(8, 4, 9, 1, [120, 80, 40]); g.disc(11, 3, 2, [110, 200, 80], 1.2); g.px(6, 7, [255, 200, 200]); },
   wood: (g) => { g.rect(1, 6, 14, 5, [168, 116, 63]); g.disc(14, 8.5, 2.6, [210, 170, 110]); g.px(14, 8, [140, 90, 50]); g.rect(1, 8, 12, 1, [120, 80, 40]); },

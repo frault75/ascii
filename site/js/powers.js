@@ -7,6 +7,7 @@ import { TOOL, isUnlocked, spend, canSpend, isSandbox } from './progress.js';
 import { spawnVillager, foundTribe, say } from './life.js';
 import { forceWeather, DAY } from './weather.js';
 import { makeCloud } from './worldgen.js';
+import { spawnAnimal } from './fauna.js';
 
 const R = Math.random;
 const REPLACEABLE_GAS = new Set([E.SMOKE, E.STEAM]);
@@ -102,6 +103,18 @@ export function useTool(id, cx, cy, r, held, drag) {
         if (t[i] === E.EMPTY && (t[i + W.w] === E.GRASS || t[i + W.w] === E.DIRT)) { putCell(i, E.PLANT, 1 + ((R() * 3) | 0), 1); n++; }
       });
       if (n) { stat(E.FLOWER, n); emit('placed', E.FLOWER, n, cx, cy); }
+      break;
+    }
+    case 'animal': {
+      if (held || cool > 0) break;
+      cool = 10;
+      if (!spend(tl.use)) { emit('broke'); break; }
+      const g = groundBelow(cx, cy);
+      if (!g) { floatText(cx, cy - 1, '?', [255, 160, 120]); break; }
+      const n = tl.animal === 'wolf' ? 2 : tl.animal === 'rabbit' ? 2 : 1;
+      for (let k = 0; k < n; k++) spawnAnimal(tl.animal, g.x + k, g.y).home = g.x;
+      for (let k = 0; k < 8; k++) spawnFx({ x: g.x, y: g.y, vx: (R() - 0.5) * 0.6, vy: -R() * 0.4, life: 30, glyph: '✦', color: [255, 240, 200], glow: 0.6, drag: 0.92 });
+      emit('placed', E.EMPTY, n, g.x, g.y);
       break;
     }
     case 'spark': {

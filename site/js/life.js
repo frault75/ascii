@@ -6,6 +6,7 @@ import { putCell, plantTree, wakeRect, speciesFor } from './sim.js';
 import { spawnFx, floatText } from './fx.js';
 import { gi } from './glyphs.js';
 import { DAY } from './weather.js';
+import { nearestPrey, animalById, killAnimal, KINDS } from './fauna.js';
 
 // ── eras ───────────────────────────────────────────────────────────────────
 export const ERAS = [
@@ -462,6 +463,11 @@ function assign(v) {
     if (tg) { claim(v, tg); walkTo(v, tg.x, tg.y, 'chop'); return; }
   } else if (job === 'food') {
     const tg = scanNear(v.x, 60, P.food, 18, 2);
+    // hunters go after game when there is some about
+    if (!v.kid && Math.random() < (tg ? 0.35 : 0.65)) {
+      const prey = nearestPrey(v.x, v.y, 80);
+      if (prey) { v.hunt = prey.id; walkTo(v, prey.x, prey.y, 'hunt', T.era >= 2 ? 6 : 4); return; }
+    }
     if (tg) { claim(v, tg); walkTo(v, tg.x, tg.y, 'gather', 0); return; }
     if (Math.random() < 0.5) {
       const sh = scanNear(v.x, 70, P.shore, 6, 6);
@@ -586,6 +592,14 @@ function arrive(v) {
     case 'mine':
       v.state = 'work'; v.timer = 140; v.action = 'mine';
       return;
+    case 'hunt': {
+      const prey = animalById(v.hunt);
+      if (!prey) { v.state = 'idle'; return; }
+      v.dir = Math.sign(prey.x - v.x) || v.dir;
+      v.state = 'work'; v.timer = 34; v.action = 'hunt';
+      say(v, pick(L(['chut…', 'là!', 'pas un bruit'], ['shh…', 'there!', 'quiet now'])), 60);
+      return;
+    }
     case 'build':
       v.state = 'work'; v.timer = 300; v.action = 'build';
       say(v, pick(L(['on bâtit!', 'hisse!'], ['build!', 'heave!'])), 120);
@@ -684,6 +698,21 @@ function finishWork(v) {
     case 'pray':
       emit('pray', v);
       break;
+    case 'hunt': {
+      const prey = animalById(v.hunt);
+      v.hunt = 0;
+      if (prey && Math.abs(prey.x - v.x) <= 9 && Math.abs(prey.y - v.y) <= 5) {
+        emit('sfx', 'spear', v.x, v.y);
+        spawnFx({ x: v.x + v.dir, y: v.y - 1, vx: (prey.x - v.x) / 14, vy: -0.22, g: 0.03, life: 15, glyph: '/', color: [210, 170, 120] });
+        if (Math.random() < 0.45 + T.era * 0.08) {
+          killAnimal(prey, 'hunt');
+          v.carry = 'food'; v.carryAmt = KINDS[prey.kind].food;
+          say(v, pick(L(['dîner!', 'touché!', 'merci, bête'], ['dinner!', 'got it!', 'thank you, beast'])), 90);
+          emit('discover', 'hunt');
+        } else say(v, L('raté…', 'missed…'), 70);
+      }
+      break;
+    }
   }
   if (v.carry) { walkTo(v, Math.round(T.center), v.y, 'deposit', 2); return; }
   v.state = 'idle';
@@ -820,6 +849,11 @@ export function updateLife() {
       continue;
     }
     if (v.state === 'walk') {
+      if (v.then === 'hunt') {
+        const prey = animalById(v.hunt);
+        if (!prey || Math.abs(prey.x - v.x) > 80) { v.hunt = 0; v.state = 'idle'; continue; }
+        v.tx = prey.x; v.ty = prey.y;
+      }
       const dx = v.tx - v.x;
       if (Math.abs(dx) <= v.reach) {
         if (Math.abs(v.ty - v.y) <= 4 || (Math.abs(v.ty - v.y) <= 10 && ++v.stuck > 6)) { v.stuck = 0; arrive(v); }

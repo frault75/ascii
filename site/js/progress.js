@@ -34,11 +34,16 @@ export const TOOLS = [
   { id: 'worm', cat: 'life', el: E.WORM, rate: 0.05, cost: 15, g: '~', c: '#ff9ab0', n: { fr: 'Vers', en: 'Worms' }, d: { fr: 'Creusent la terre.', en: 'Burrow through soil.' } },
   { id: 'shroom', cat: 'life', el: E.SHROOM, rate: 0.1, cost: 90, g: '♠', c: '#6affd8', n: { fr: 'Champignons', en: 'Mushrooms' }, d: { fr: 'Bioluminescents. Se propagent dans l\'obscurité.', en: 'Bioluminescent. Spread in the dark.' } },
 
+  { id: 'rabbit', cat: 'life', special: 'animal', animal: 'rabbit', cost: 20, use: 3, g: 'r', c: '#e8d8c0', n: { fr: 'Lapins', en: 'Rabbits' }, d: { fr: 'Se multiplient vite. Une proie pour les loups… et pour la tribu.', en: 'Breed fast. Prey for wolves… and for the tribe.' } },
+  { id: 'deer', cat: 'life', special: 'animal', animal: 'deer', cost: 40, use: 6, g: 'd', c: '#d8a070', n: { fr: 'Cerfs', en: 'Deer' }, d: { fr: 'Le gibier des forêts. Les chasseurs les traquent.', en: 'Forest game. Hunters track them.' } },
+  { id: 'boar', cat: 'life', special: 'animal', animal: 'boar', cost: 60, use: 8, g: 'b', c: '#a08070', n: { fr: 'Sangliers', en: 'Boars' }, d: { fr: 'Robustes. Ils chargent quand on les coince.', en: 'Sturdy. They charge when cornered.' } },
+
   { id: 'fire', cat: 'chaos', el: E.FIRE, rate: 0.5, g: '^', c: '#ffcf5a', n: { fr: 'Feu', en: 'Fire' }, d: { fr: 'Dévore le bois, les feuilles, l\'huile.', en: 'Devours wood, leaves, oil.' } },
   { id: 'oil', cat: 'chaos', el: E.OIL, rate: 0.45, cost: 35, g: '≈', c: '#9a7ab8', n: { fr: 'Huile', en: 'Oil' }, d: { fr: 'Flotte sur l\'eau. S\'embrase d\'un rien.', en: 'Floats on water. Ignites at nothing.' } },
   { id: 'acid', cat: 'chaos', el: E.ACID, rate: 0.45, cost: 90, g: '≈', c: '#c6ff5a', n: { fr: 'Acide', en: 'Acid' }, d: { fr: 'Dissout tout sauf le verre.', en: 'Dissolves everything but glass.' } },
   { id: 'gunpowder', cat: 'chaos', el: E.GUNPOWDER, rate: 0.5, cost: 70, g: ':', c: '#a8a8ae', n: { fr: 'Poudre', en: 'Gunpowder' }, d: { fr: 'Une étincelle et… boum.', en: 'One spark and… boom.' } },
   { id: 'tnt', cat: 'chaos', el: E.TNT, rate: 1, cost: 160, g: '≡', c: '#ff4a4a', n: { fr: 'TNT', en: 'TNT' }, d: { fr: 'Grosse explosion. Réactions en chaîne.', en: 'Big explosion. Chain reactions.' } },
+  { id: 'wolf', cat: 'chaos', special: 'animal', animal: 'wolf', cost: 120, use: 15, g: 'w', c: '#c8c8d4', n: { fr: 'Loups', en: 'Wolves' }, d: { fr: 'Chassent la nuit. Le feu et les lampes les tiennent à distance.', en: 'Hunt at night. Fire and lamps keep them away.' } },
   { id: 'bolt', cat: 'chaos', special: 'bolt', cost: 110, g: 'ϟ', c: '#bfe0ff', n: { fr: 'Foudre', en: 'Lightning' }, d: { fr: 'Frappe là où tu cliques. Électrise l\'eau et le métal.', en: 'Strikes where you click. Electrifies water and metal.' } },
   { id: 'meteor', cat: 'chaos', special: 'meteor', cost: 280, use: 20, g: '@', c: '#ff9a3a', n: { fr: 'Météorite', en: 'Meteor' }, d: { fr: 'Une pierre venue d\'ailleurs. Laisse de la pierre-étoile.', en: 'A stone from elsewhere. Leaves starstone.' } },
   { id: 'volcano', cat: 'chaos', special: 'volcano', cost: 450, use: 60, g: '▲', c: '#ff5a2a', n: { fr: 'Volcan', en: 'Volcano' }, d: { fr: 'Fait jaillir la lave du sol.', en: 'Makes lava burst from the ground.' } },
@@ -66,6 +71,8 @@ for (const tl of TOOLS) { tl.cost = tl.cost || 0; tl.use = tl.use || 0; }
 export const TOOL = Object.fromEntries(TOOLS.map((x) => [x.id, x]));
 
 export const DISCOVERIES = {
+  hunt: { r: 15, n: { fr: 'Chasseurs', en: 'Hunters' }, d: { fr: 'La tribu a abattu son premier gibier.', en: 'The tribe brought down its first game.' } },
+  wolves: { r: 20, n: { fr: 'Des crocs dans la nuit', en: 'Teeth in the night' }, d: { fr: 'Les loups ont attaqué un villageois.', en: 'Wolves attacked a villager.' } },
   sprout: { r: 5, n: { fr: 'Première pousse', en: 'First sprout' }, d: { fr: 'Une graine a germé.', en: 'A seed has sprouted.' } },
   flower: { r: 5, n: { fr: 'Floraison', en: 'Bloom' }, d: { fr: 'Une fleur s\'est ouverte.', en: 'A flower opened.' } },
   steam: { r: 10, n: { fr: 'Vapeur', en: 'Steam' }, d: { fr: 'L\'eau rencontre la chaleur.', en: 'Water meets heat.' } },

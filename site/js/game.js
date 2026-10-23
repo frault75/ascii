@@ -15,7 +15,8 @@ import { toast, logLine, banner, hint, UI, refreshTools, togglePanel, showTransm
 import { welcomeBack } from './voices.js';
 import { IN } from './input.js';
 import { fmt } from './util.js';
-import { F, ANCHOR, HEAD, EXPR, PROP, PROP_PAL, PIV_BODY, PIV_HEAD, PIV_PROP, lookOf } from './sprites.js';
+import { F, ANCHOR, HEAD, EXPR, PROP, PROP_PAL, PIV_BODY, PIV_HEAD, PIV_PROP, lookOf, ANIMAL, ANIMAL_PAL } from './sprites.js';
+import { initFauna, killAnimal, animalName } from './fauna.js';
 
 // ── new / load ─────────────────────────────────────────────────────────────
 export function newGame(mode, onProgress) {
@@ -33,6 +34,7 @@ export function newGame(mode, onProgress) {
   if (mode === 'sandbox') G.progress.faith = 0;
   const x = findSpawnSite();
   foundTribe(x);
+  initFauna();
   G.cam.zoom = window.innerWidth < 760 ? 1.25 : 1.6;
   G.cam.x = x - window.innerWidth / (10 * G.cam.zoom) / 2;
   G.cam.y = W.surf[x] - window.innerHeight / (16 * G.cam.zoom) * 0.62;
@@ -52,6 +54,8 @@ export function resumeGame() {
   createEnv();
   Object.assign(G.env, s.env);
   G.tribe = s.tribe;
+  G.fauna = s.fauna || null;
+  if (!G.fauna) initFauna();
   G.progress = s.progress;
   G.progress.stats = Object.assign({ placed: {}, cells: 0, explosions: 0, strikes: 0, miracles: 0 }, G.progress.stats);
   G.cam.x = s.cam.x; G.cam.y = s.cam.y; G.cam.zoom = s.cam.zoom;
@@ -108,6 +112,27 @@ export function wireEvents() {
     logLine('† ' + t('logDeath', v.name, t('cause_' + cause)), true, '#b8bccc');
     sfx('death', v.x, v.y);
     if (!G.tribe.villagers.length) { logLine(t('logExtinct'), true, '#ff6a5a'); toast('warn', '', t('logExtinct')); }
+  });
+  // wildlife meets the tribe
+  on('wolfAttack', (a, v) => {
+    emit('discover', 'wolves');
+    sfx('growl', a.x, a.y);
+    const fr2 = G.settings.lang === 'fr';
+    if (G.tribe.era >= 2 && Math.random() < 0.5) {
+      killAnimal(a, 'hunt');
+      say(v, fr2 ? 'DÉGAGE!' : 'BACK OFF!', 100);
+      logLine('⚔ ' + (fr2 ? `${v.name} a repoussé un loup.` : `${v.name} fought off a wolf.`), false, '#d8c8b0');
+    } else if (Math.random() < 0.45) kill(v, 'wolf');
+    else {
+      v.state = 'flee'; v.timer = 160; v.dir = Math.sign(v.x - a.x) || 1;
+      say(v, fr2 ? 'AU LOUP!' : 'WOLF!', 100);
+      logLine('⚠ ' + (fr2 ? `Les loups ont attaqué ${v.name}.` : `Wolves attacked ${v.name}.`), false, '#ffb070');
+    }
+  });
+  on('boarCharge', (a, v) => {
+    if (v.inside || !G.tribe.villagers.includes(v)) return;
+    if (Math.random() < 0.12) kill(v, 'boar');
+    else { v.state = 'flee'; v.timer = 90; v.dir = Math.sign(v.x - a.x) || 1; say(v, G.settings.lang === 'fr' ? 'aïe! un sanglier!' : 'ow! a boar!', 90); }
   });
   on('built', (b) => {
     if (b.kind === 'camp') return;
@@ -221,6 +246,30 @@ const RS = new Map(); // id → smoothed position, walk phase, cached look
 let lastDraw = 0;
 const pick = (list, t) => list[((Math.floor(t) % list.length) + list.length) % list.length];
 
+// ── animals ────────────────────────────────────────────────────────────────
+const AS = new Map();
+const AN_SCALE = { rabbit: 0.95, deer: 1.1, boar: 1, wolf: 1.05 };
+function drawAnimal(a, view, time, dt, W) {
+  const R = G.renderer;
+  let s = AS.get(a.id);
+  const tx = a.x + 0.5, ty = a.y + 1;
+  if (!s) { s = { x: tx, y: ty, ph: a.id % 4, lx: a.x, mt: 0 }; AS.set(a.id, s); }
+  if (Math.abs(tx - s.x) > 3 || Math.abs(ty - s.y) > 3) { s.x = tx; s.y = ty; }
+  const k = 1 - Math.exp(-dt * 16);
+  const px0 = s.x;
+  s.x += (tx - s.x) * k; s.y += (ty - s.y) * k;
+  if (a.x !== s.lx) { s.mt = 0.3; s.lx = a.x; }
+  s.mt -= dt;
+  s.ph += Math.abs(s.x - px0) * 2.2;
+  const u = (view.cellW / 10) * AN_SCALE[a.kind] * (a.young ? 0.62 : 1);
+  const px = (s.x - view.ox) * view.cellW - view.offX, py = (s.y - view.oy) * view.cellH - view.offY;
+  if (px < -40 * u || px > R.W + 40 * u || py < -10 * u || py > R.H + 50 * u) return;
+  const A = ANIMAL[a.kind];
+  const body = s.mt > 0 ? A.run[Math.floor(s.ph) & 3] : a.state === 'graze' && ((time * 0.4 + a.id * 0.37) % 2) < 1 ? A.graze : A.stand;
+  const pal = a.kind === 'rabbit' && W.biome[a.x] === 6 ? ANIMAL_PAL.snowhare : ANIMAL_PAL[a.kind];
+  R.sprite(px, py, PIV_BODY[0], PIV_BODY[1], u * (a.dir < 0 ? -1 : 1), u, 0, body, a.kind === 'wolf' && G.env.night ? 0.32 : 0.45, 1, pal);
+}
+
 function drawVillager(v, view, time, dt, W, hovered, followed) {
   const R = G.renderer;
   const T = G.tribe;
@@ -266,6 +315,7 @@ function drawVillager(v, view, time, dt, W, hovered, followed) {
   } else if (work === 'chop') body = pick(F.axe, sw);
   else if (work === 'mine') body = pick(F.pick, sw);
   else if (work === 'build') body = pick(F.hammer, sw);
+  else if (work === 'hunt') body = v.timer > 12 ? F.throw[0] : F.throw[1];
   else if (work === 'pray') body = pick(F.pray, time * 1.2 + v.id);
   else if (work === 'fish') body = pick(F.fish, time * 0.8 + v.id);
   else if (work === 'gather' || work === 'forage') body = pick(F.gather, time * 2.4 + v.id);
@@ -326,6 +376,14 @@ export function drawOverlays(view, time) {
   if (RS.size > T.villagers.length + 24) {
     const alive = new Set(T.villagers.map((v) => v.id));
     for (const id of RS.keys()) if (!alive.has(id)) RS.delete(id);
+  }
+  if (G.fauna) {
+    if (AS.size > G.fauna.list.length + 32) { const alive = new Set(G.fauna.list.map((q) => q.id)); for (const id of AS.keys()) if (!alive.has(id)) AS.delete(id); }
+    for (const a of G.fauna.list) {
+      if (a.x < view.ox - 3 || a.x > view.ox + view.cols + 3 || a.y < view.oy - 2 || a.y > view.oy + view.rows + 3) continue;
+      drawAnimal(a, view, time, dt, W);
+      if (IN.inside && Math.abs(a.x + 0.5 - IN.wx) < 1.5 && Math.abs(a.y - IN.wy) < 1.5) overlayText(view, a.x, a.y - 2, animalName(a), 230, 220, 205, 0.2);
+    }
   }
   for (const v of T.villagers) {
     if (v.inside) continue;

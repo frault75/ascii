@@ -68,6 +68,7 @@ export function saveGame() {
     env: G.env,
     tribe: { ...T, claimed: [], villagers: T.villagers.map((v) => ({ ...v, ti: -1, state: v.inside ? 'inside' : 'idle', site: null, then: null })) },
     progress: G.progress,
+    fauna: G.fauna,
     cam: { x: G.cam.x, y: G.cam.y, zoom: G.cam.zoom },
     logs: G.ui ? G.ui.logs.slice(-40) : [],
   };
@@ -105,7 +106,7 @@ export function loadGame() {
   W.computeSurface();
   const T = data.tribe;
   T.claimed = new Set();
-  return { W, env: data.env, tribe: T, progress: data.progress, cam: data.cam, logs: data.logs || [], mode: data.mode, time: data.time };
+  return { W, env: data.env, tribe: T, fauna: data.fauna, progress: data.progress, cam: data.cam, logs: data.logs || [], mode: data.mode, time: data.time };
 }
 
 export function clearSave() {

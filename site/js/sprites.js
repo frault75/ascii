@@ -193,6 +193,12 @@ function torso(P, J) {
 // a tool held in the near hand, pointing along angle a
 function tool(P, w, a, kind) {
   const d = dv(a, 1), p = [-d[1], d[0]];
+  if (kind === 'spear') {
+    const s0 = add(w, d, -7), E = add(w, d, 9);
+    P.line([...s0, ...E], 1.1, 'wood', 0.9);
+    P.poly([...add(E, d, 2.6), ...add(add(E, d, -0.4), p, 1.1), ...add(add(E, d, -0.4), p, -1.1)], 'metal', 1, 0.4);
+    return;
+  }
   if (kind === 'cane') {
     P.line([w[0] + 0.6, w[1] - 1.2, w[0] + 0.4, w[1], w[0] + 1.1, GROUND - 0.3], 1.1, 'wood', 0.8);
     return;
@@ -342,7 +348,96 @@ function buildBodies() {
     side({ legs: [[-0.3, 0], [0.3, 0]], arms: [[1.2, 1.4], [2.0, 1.9]], free: true }, null, { clipY: 25.2, noShadow: true }),
   ];
   F.lie = [lie()];
+  F.throw = [
+    side({ legs: [[-0.3, -0.35], [0.32, 0.15]], arms: [[1.0, 1.3], [3.6, 2.4]], lean: -0.12 }, { kind: 'spear', a: 1.75 }),
+    side({ legs: [[-0.35, -0.3], [0.4, 0.2]], arms: [[0.9, 1.2], [1.7, 1.55]], lean: 0.18 }, null),
+  ];
 }
+
+// ── animals (pivot = feet, facing right) ──────────────────────────────────
+// slots: cloth = coat, skin = belly / light marks, pants = hooves & dark marks,
+// wood = antlers / tusks, hair = accents
+export const ANIMAL = {};
+const legLine = (P, x, y0, a, L, wdt, k) => {
+  const e = [x + Math.sin(a) * L, Math.min(GROUND - 0.6, y0 + Math.cos(a) * L)];
+  P.line([x, y0, ...e], wdt, 'cloth', 0.75 * k);
+  P.line([e[0] - 0.2, e[1] - 0.5, e[0] + 0.5, e[1] + 0.2], wdt + 0.2, 'pants', 0.6 * k);
+};
+function animalFrame(kind, pose, ph) {
+  const run = pose === 'run', graze = pose === 'graze';
+  const sw = run ? Math.sin(ph) : 0, cw = run ? Math.cos(ph) : 0;
+  return addFrame((P) => {
+    if (!run || kind !== 'rabbit') P.shadow(CX, GROUND + 0.2, kind === 'rabbit' ? 3.5 : 6.5, 1, 0.3);
+    for (const ol of [true, false]) {
+      P.ol = ol;
+      if (kind === 'rabbit') {
+        const hop = run ? Math.max(0, -cw) * 3.2 : 0;
+        const by = 35.4 - hop;
+        P.circle(10.4, by - 0.8, 1.4, 'skin', 1);
+        P.line([12.5, by + 1.4, run ? 10.5 + sw * 1.5 : 13.6, GROUND - 0.7], 1.9, 'cloth', 0.75);
+        P.ellipse(15, by, 4.6, 3.1, run ? -0.12 : 0, 'cloth', 1);
+        P.line([18, by + 1.6, run ? 19.6 - sw : 18.4, GROUND - 0.7 - (run ? hop * 0.5 : 0)], 1.5, 'cloth', 0.85);
+        const hx = graze ? 20.6 : 19.6, hy = graze ? by + 1.6 : by - 2.6;
+        P.line([hx - 0.6, hy - 1.4, hx - 1.4 - (run ? 1.2 : 0), hy - 6.4], 1.4, 'cloth', 0.9);
+        P.line([hx + 0.2, hy - 1.5, hx + 0.6 - (run ? 1.2 : 0), hy - 6.2], 1.4, 'cloth', 1);
+        P.circle(hx, hy, 2.3, 'cloth', 1);
+        if (!ol) { P.ellipse(15.4, by + 1.4, 3, 1.3, 0, 'skin', 0.9); P.circle(hx + 0.9, hy - 0.3, 0.55, 'ink'); P.circle(hx + 2.1, hy + 0.5, 0.45, 'pants', 0.8); }
+      } else if (kind === 'deer' || kind === 'wolf' || kind === 'boar') {
+        const wolf = kind === 'wolf', boar = kind === 'boar';
+        const len = boar ? 7 : 6.6, bh = boar ? 4.2 : wolf ? 3.1 : 3.5;
+        const legL = boar ? 4.2 : wolf ? 6.4 : 7.6;
+        const by = GROUND - legL - bh + 0.8 + (run ? Math.abs(sw) * -0.8 : 0);
+        const ang = run ? 0.65 : 0.12;
+        // far legs, tail
+        legLine(P, CX - len + 2.4, by + 1, -ang * sw + 0.08, legL + 0.6, wolf ? 1.4 : 1.3, 0.75);
+        legLine(P, CX + len - 2.2, by + 1, ang * sw - 0.05, legL + 0.6, wolf ? 1.4 : 1.3, 0.75);
+        if (wolf) P.line([CX - len + 0.6, by - 0.6, CX - len - 2.6, by + 1.6 + (run ? -1.5 : 0), CX - len - 3.4, by + 4.2 + (run ? -2.6 : 0)], 2.3, 'cloth', 0.95);
+        else if (boar) P.line([CX - len + 0.4, by - 0.4, CX - len - 1.2, by + 1.2], 0.8, 'pants', 0.8);
+        else P.ellipse(CX - len + 0.2, by - 1, 1.2, 1.5, 0.4, 'skin', 1);
+        // body
+        P.ellipse(CX, by, len, bh, run ? -0.05 * cw : 0, 'cloth', 1);
+        // near legs
+        legLine(P, CX - len + 2.6, by + 1.2, ang * sw + 0.04, legL, wolf ? 1.5 : 1.4, 1);
+        legLine(P, CX + len - 2.4, by + 1.2, -ang * sw - 0.02, legL, wolf ? 1.5 : 1.4, 1);
+        // neck & head
+        const nx = CX + len - 1.4;
+        let hx, hy;
+        if (boar) { hx = nx + 3.2; hy = by + (graze ? 2.2 : 0.6); P.poly([nx - 1, by - bh + 0.6, hx + 1.6, hy - 1.6, hx + 3.6, hy + 0.6, hx + 3.4, hy + 2.2, nx - 0.4, by + bh - 0.6], 'cloth', 0.92, 1); }
+        else if (wolf) { hx = nx + 3.4; hy = by - (graze ? -1.6 : 2.4); P.line([nx - 0.6, by - 0.6, hx - 1, hy + 0.6], 3.2, 'cloth', 1); P.ellipse(hx, hy, 2.6, 2.1, 0, 'cloth', 1); P.poly([hx + 1.2, hy - 0.6, hx + 4.6, hy + 0.7, hx + 1.4, hy + 1.8], 'cloth', 0.95, 0.7); P.poly([hx - 1.6, hy - 1.2, hx - 0.8, hy - 4.6, hx + 0.4, hy - 1.6], 'cloth', 0.85, 0.4); }
+        else { hx = nx + (graze ? 4.2 : 3.4); hy = graze ? by + 4.8 : by - 6.2; P.line([nx - 0.4, by - 1, hx - 0.6, hy + 0.4], 2.8, 'cloth', 1); P.ellipse(hx + 0.6, hy, 2.6, 1.7, graze ? 0.9 : 0.25, 'cloth', 1); P.ellipse(hx - 1, hy - 1.6, 1.3, 0.7, -0.7, 'cloth', 0.85); }
+        if (!ol) {
+          if (wolf) { P.ellipse(CX + 1, by + bh - 1.2, len - 2, 1.1, 0, 'skin', 0.9); P.ellipse(CX - 1.5, by - bh + 1.1, 3.6, 1, 0, 'pants', 0.7); P.circle(hx + 4.4, hy + 0.8, 0.55, 'pants', 0.3); }
+          else if (boar) { P.line([CX - len + 1.6, by - bh + 0.4, CX + len - 2, by - bh + 0.2], 1.3, 'pants', 0.55); P.line([hx + 2.6, hy + 1.6, hx + 3.6, hy - 0.2], 0.7, 'wood', 1); P.circle(hx + 3.5, hy + 1.4, 0.6, 'pants', 0.4); }
+          else { P.ellipse(CX + 0.6, by + bh - 1, len - 2.2, 1, 0, 'skin', 0.95); for (const [x, y] of [[-2, -1], [0.5, -1.8], [3, -0.8]]) P.circle(CX + x, by + y, 0.45, 'skin', 1); P.circle(hx + 2.8, hy + (graze ? 1.4 : 0.3), 0.5, 'pants', 0.3); }
+          P.circle(hx + (boar ? 1.6 : 0.9), hy - (boar ? 0.6 : 0.4), 0.5, 'ink');
+        }
+        if (kind === 'deer' && !graze) {
+          // antlers
+          const ax = hx - 0.6, ay = hy - 1.6;
+          P.line([ax, ay, ax - 0.8, ay - 3.6, ax - 2.6, ay - 6.2], 0.75, 'wood', 1);
+          P.line([ax - 0.8, ay - 3.6, ax + 0.9, ay - 5.8], 0.7, 'wood', 1);
+          P.line([ax - 1.6, ay - 4.8, ax - 3.6, ay - 4.6], 0.65, 'wood', 1);
+        }
+      }
+    }
+  });
+}
+function buildAnimals() {
+  for (const kind of ['rabbit', 'deer', 'boar', 'wolf']) {
+    ANIMAL[kind] = {
+      stand: animalFrame(kind, 'stand', 0),
+      graze: animalFrame(kind, 'graze', 0),
+      run: [0, 1, 2, 3].map((k) => animalFrame(kind, 'run', (k / 4) * Math.PI * 2)),
+    };
+  }
+}
+export const ANIMAL_PAL = {
+  rabbit: [[245, 240, 230], [168, 130, 98], [0, 0, 0], [60, 44, 36], [0, 0, 0], [0, 0, 0]],
+  snowhare: [[240, 244, 252], [232, 236, 246], [0, 0, 0], [120, 130, 150], [0, 0, 0], [0, 0, 0]],
+  deer: [[236, 218, 190], [176, 112, 62], [0, 0, 0], [52, 36, 28], [232, 220, 196], [0, 0, 0]],
+  boar: [[120, 96, 84], [104, 76, 62], [0, 0, 0], [44, 32, 28], [244, 240, 226], [0, 0, 0]],
+  wolf: [[214, 214, 222], [128, 130, 142], [0, 0, 0], [62, 62, 74], [0, 0, 0], [0, 0, 0]],
+};
 
 // ── heads (pivot = neck) ───────────────────────────────────────────────────
 export const STYLES = 6; // short · long · ponytail · bun · bald+beard · spiky
@@ -453,6 +548,7 @@ export function buildSprites() {
   buildBodies();
   buildHeads();
   buildProps();
+  buildAnimals();
   const rows = Math.ceil(frames.length / COLS);
   const mk = (pass) => {
     const cv = document.createElement('canvas');
@@ -582,5 +678,21 @@ export function portrait(v, era = 0) {
   c2.drawImage(cv, 0, 0, 64, 64);
   const url = crop.toDataURL();
   portraits.set(v.id, { key, url });
+  return url;
+}
+
+// a little picture of an animal for the interface
+const animalIcons = new Map();
+export function animalIcon(kind) {
+  if (animalIcons.has(kind)) return animalIcons.get(kind);
+  buildSprites();
+  const cv = composite([[ANIMAL[kind].stand, ANIMAL_PAL[kind], 0, 0]], 2 * PX, 10 * PX, 28 * PX, 30 * PX);
+  const out = document.createElement('canvas');
+  out.width = out.height = 64;
+  const c = out.getContext('2d');
+  c.imageSmoothingQuality = 'high';
+  c.drawImage(cv, 0, 0, 64, 64 * (30 / 28));
+  const url = out.toDataURL();
+  animalIcons.set(kind, url);
   return url;
 }

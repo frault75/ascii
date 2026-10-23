@@ -134,7 +134,7 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .ico { image-rendering: pixelated; image-rendering: crisp-edges; }
 .tool .ico { width: 26px; height: 26px; filter: drop-shadow(0 0 5px color-mix(in srgb, var(--tc) 55%, transparent)); }
 .ico.s { width: 16px; height: 16px; vertical-align: -3px; }
-.fi { display: inline-block; width: .72em; height: .72em; background-size: contain; background-repeat: no-repeat; image-rendering: pixelated; vertical-align: -.05em; margin: 0 .08em; filter: drop-shadow(0 0 3px rgba(111, 242, 255, .7)); }
+.fi { display: inline-block; width: 1em; height: .9em; background-size: contain; background-repeat: no-repeat; image-rendering: pixelated; vertical-align: -.05em; margin: 0 .08em; filter: drop-shadow(0 0 3px rgba(111, 242, 255, .7)); }
 .tool .n { font-size: 9px; color: var(--dim); margin-top: 4px; letter-spacing: .04em; max-width: 60px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tool .k { position: absolute; top: 2px; left: 4px; font-size: 8px; color: var(--faint); }
 .tool .c { position: absolute; top: 2px; right: 4px; font-size: 8px; color: var(--cyan); }

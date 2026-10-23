@@ -217,6 +217,14 @@ export class Sound {
       case 'miracle': [0, 7, 12].forEach((n, i) => this.tone(midi(79 + n), 1.2, { type: 'sine', vol: 0.06, delay: i * 0.12, echo: 0.5, verb: 0.7 })); break;
       case 'glitch': this.tone(80 + R() * 800, 0.12, { type: 'square', vol: 0.05 * k, verb: 0 }); break;
       case 'type': this.tone(1800 + R() * 600, 0.015, { type: 'square', vol: 0.012, verb: 0 }); break;
+      case 'howl':
+        this.tone(midi(64), 2.4, { type: 'sine', vol: 0.06 * Math.max(0.35, k), slide: 1.33, attack: 0.5, verb: 0.9, echo: 0.4 });
+        this.tone(midi(64.3), 2.4, { type: 'triangle', vol: 0.025 * Math.max(0.35, k), slide: 1.31, attack: 0.6, verb: 0.9 });
+        break;
+      case 'growl': this.burst(0.5, { vol: 0.12 * k, type: 'lowpass', from: 300, to: 120, q: 6, buf: this.brown, verb: 0.2 }); break;
+      case 'grunt': this.tone(95 + R() * 20, 0.16, { type: 'sawtooth', vol: 0.05 * k, slide: 0.8, verb: 0.1 }); break;
+      case 'rustle': this.burst(0.12, { vol: 0.04 * k, type: 'highpass', from: 2500, to: 3500, verb: 0.05 }); break;
+      case 'spear': this.burst(0.18, { vol: 0.06 * k, type: 'bandpass', from: 2400, to: 900, q: 2, verb: 0.1 }); break;
       case 'splash': this.burst(0.3, { vol: 0.08 * k, type: 'bandpass', from: 1500, to: 400, q: 1.5 }); break;
     }
   }

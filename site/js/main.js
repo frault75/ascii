@@ -18,6 +18,7 @@ import { hasSave, loadSettings } from './save.js';
 import { newGame, resumeGame, wireEvents, drawOverlays, updateRocket, updateHints, autosave } from './game.js';
 import { t } from './i18n.js';
 import { updateVoices } from './voices.js';
+import { updateFauna } from './fauna.js';
 import { clamp } from './util.js';
 
 const BASE_W = 10, BASE_H = 16;
@@ -228,6 +229,7 @@ function simStep() {
   updateClouds();
   updateLife();
   updateEcology();
+  updateFauna();
   updateEmitters();
   updateQuake();
   updateEvents();
