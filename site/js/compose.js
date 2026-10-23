@@ -505,7 +505,8 @@ export function compose(view, time) {
           else if (sp === SP.PALM) { cr = 90; cg = 190; cb = 70; gl = g.palm[vv & 3]; }
           else if (sp === SP.CHERRY && season === 0) { cr = 255; cg = 150 + hv * (PIX ? 14 : 50); cb = 200; gl = g.cherry[vv % 5]; }
           else if (sp === SP.BIRCH) { cr = 140; cg = 200; cb = 70; }
-          if (sp !== SP.PINE && sp !== SP.PALM) {
+          else if (sp === SP.JUNGLE) { cr = 44; cg = 148; cb = 58; }
+          if (sp !== SP.PINE && sp !== SP.PALM && sp !== SP.JUNGLE) {
             if (season === 0 && sp !== SP.CHERRY) { cr += 30; cg += 40; }
             if (season === 2) {
               const k = vv % 3;
@@ -675,11 +676,16 @@ export function compose(view, time) {
             case E.SMOKE: case E.STEAM: ti = TL.puff[vv % 3]; break;
             case E.WOOD: {
               const sp = a[i] & 7;
-              if (gl === g.fs || gl === g.bs) {
+              if (sp === SP.CACTUS) {
+                fr = 104; fgc = 184; fb = 86; r2 = 46; g2 = 104; b2 = 52; self &= 0xf0;
+                if (t[i - w] !== E.WOOD) {
+                  ti = TILE.cactusTop;
+                  r2 = br; g2 = bgc; b2 = bb; self = bself === SELF ? SELF_BG : 0; skyC = sky;
+                } else { ti = TILE.cactus; rim = 4; bits = (OPEN[t[i + 1]] ? 2 : 0) | (OPEN[t[i - 1]] ? 8 : 0); }
+              } else if (gl === g.fs || gl === g.bs) {
                 ti = gl === g.fs ? TILE.branchR : TILE.branchL;
                 fr *= 0.72; fgc *= 0.72; fb *= 0.72;
-              }
-              else if (sp === SP.PINE && t[i - 1] === E.LEAF && t[i + 1] === E.LEAF) {
+              } else if (sp === SP.PINE && t[i - 1] === E.LEAF && t[i + 1] === E.LEAF) {
                 // a conifer's trunk hides inside its needles
                 const sw = season === 3 ? 0.85 : 1;
                 fr = 40 * sw; fgc = 120 * sw; fb = 70 * sw; r2 = 20; g2 = 66; b2 = 38;
@@ -713,8 +719,11 @@ export function compose(view, time) {
                   }
                 }
               } else if (sp === SP.PALM) {
-                ti = TL.frond[vv & 1];
-                rim = 2; bits = m;
+                // fronds droop away from the crown, over the sky
+                const l = t[i - 1], rr = t[i + 1];
+                const crownL = l === E.LEAF || l === E.WOOD, crownR = rr === E.LEAF || rr === E.WOOD;
+                ti = t[i + w] === E.WOOD ? TILE.frondUp : crownL && !crownR ? TILE.frondTipR : crownR && !crownL ? TILE.frondTipL : TILE.frondMid;
+                r2 = br; g2 = bgc; b2 = bb; self = bself === SELF ? SELF_BG : 0; skyC = sky;
               } else {
                 // broadleaf canopies are drawn by the shader from the leaf map
                 LF[o] = fr; LF[o + 1] = fgc; LF[o + 2] = fb; LF[o + 3] = 255;

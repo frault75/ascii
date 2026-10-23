@@ -8,6 +8,7 @@ import { miracle } from './powers.js';
 import { acceptRequest, declineRequest, requestProgress } from './voices.js';
 import { fmt, clamp } from './util.js';
 import { portrait } from './sprites.js';
+import { toolIcon, hudIcon, watchFaithSymbols } from './icons.js';
 import { SEASONS, DAY } from './weather.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -60,6 +61,7 @@ export function scramble(el, text, ms = 700) {
 export function buildUI() {
   const ui = $('#ui');
   ui.innerHTML = '';
+  if (!ui.dataset.gems) { ui.dataset.gems = 1; watchFaithSymbols(ui); }
   ui.append(
     h('div', '', `
     <div id="top">
@@ -77,8 +79,8 @@ export function buildUI() {
   side.innerHTML = `
     <div id="minimap" class="frame"><canvas width="400" height="150"></canvas></div>
     <div id="nav">
-      <button class="nb frame" data-p="civ"><span class="g">☺</span>CIV</button>
-      <button class="nb frame" data-p="codex"><span class="g">◊</span>CODEX</button>
+      <button class="nb frame" data-p="civ"><img class="g ico nbi" alt="" src="${hudIcon('people')}">CIV</button>
+      <button class="nb frame" data-p="codex"><img class="g ico nbi" alt="" src="${hudIcon('discovery')}">CODEX</button>
       <button class="nb frame" data-p="settings"><span class="g">⚙</span>${G.settings.lang === 'fr' ? 'RÉGL' : 'SET'}</button>
       <button class="nb frame" data-p="help"><span class="g">?</span>${t('help')}</button>
     </div>
@@ -194,7 +196,7 @@ function buildTools() {
   for (const tl of toolList()) {
     const b = h('button', 'tool' + (tl.miracle ? ' miracle' : ''));
     b.dataset.id = tl.id;
-    b.innerHTML = `<span class="k">${k <= 9 ? k : ''}</span><span class="c"></span><span class="g" style="color:${tl.c}">${tl.g}</span><span class="n">${tr(tl.n)}</span>`;
+    b.innerHTML = `<span class="k">${k <= 9 ? k : ''}</span><span class="c"></span><img class="g ico" alt="" style="--tc:${tl.c}" src="${toolIcon(tl)}"><span class="n">${tr(tl.n)}</span>`;
     k++;
     b.onclick = () => clickTool(tl.id);
     b.onmouseenter = (e) => showTip(e, tl);
@@ -249,7 +251,7 @@ function showTip(e, tl) {
   let meta = '';
   if (!un) meta = tl.disc ? `${t('discoverToUnlock')} : ${tr(DISCOVERIES[tl.disc].n)}` : `${t('unlock')} · ${fmt(tl.cost)} ◊`;
   else if (tl.use && !isSandbox()) meta = `${tl.use} ◊ ${t('perUse')}`;
-  tip.innerHTML = `<div class="h" style="color:${tl.c}">${tl.g}  ${tr(tl.n)}</div><div class="d">${tr(tl.d)}</div>${meta ? `<div class="m">${meta}</div>` : ''}`;
+  tip.innerHTML = `<div class="h" style="color:${tl.c}"><img class="ico s" alt="" src="${toolIcon(tl)}"> ${tr(tl.n)}</div><div class="d">${tr(tl.d)}</div>${meta ? `<div class="m">${meta}</div>` : ''}`;
   const r = e.currentTarget.getBoundingClientRect();
   tip.classList.add('show');
   const tw = tip.offsetWidth, th = tip.offsetHeight;
@@ -437,13 +439,13 @@ export function updateHUD(force = false) {
   const mood = '▮'.repeat(m) + '▯'.repeat(5 - m);
   const mc = T.happiness > 0.6 ? 'green' : T.happiness > 0.35 ? 'amber' : 'red';
   $('#res').innerHTML = `
-    <div class="faith r" title="${t('faith')}"><span class="k">◊</span><span class="v">${faith}</span><span class="s">+${T.faithRate.toFixed(2)}${t('perSec')}</span><span class="mood ${mc}" style="margin-left:auto" title="${t('mood')} : ${moodWord()}">${mood}</span></div>
-    <div class="r" title="${t('pop')}"><span class="k">☺</span><span class="v">${pop}<span class="dim">/${cap}</span></span></div>
-    <div class="r" title="${t('food')}"><span class="k">♣</span><span class="v ${T.food < pop ? 'red' : ''}">${fmt(T.food)}</span></div>
-    <div class="r" title="${t('wood')}"><span class="k">≡</span><span class="v">${fmt(T.wood)}</span></div>
-    <div class="r" title="${t('stone')}"><span class="k">▪</span><span class="v">${fmt(T.stone)}</span></div>
-    <div class="r" title="${t('metal')}"><span class="k">◆</span><span class="v">${fmt(T.metal)}</span></div>
-    <div class="r" title="${t('discoveries')}"><span class="k">✦</span><span class="v">${Object.keys(P.found).length}<span class="dim">/${Object.keys(DISCOVERIES).length}</span></span></div>`;
+    <div class="faith r" title="${t('faith')}"><img class="k ico" alt="" src="${hudIcon('faith')}"><span class="v">${faith}</span><span class="s">+${T.faithRate.toFixed(2)}${t('perSec')}</span><span class="mood ${mc}" style="margin-left:auto" title="${t('mood')} : ${moodWord()}">${mood}</span></div>
+    <div class="r" title="${t('pop')}"><img class="k ico" alt="" src="${hudIcon('people')}"><span class="v">${pop}<span class="dim">/${cap}</span></span></div>
+    <div class="r" title="${t('food')}"><img class="k ico" alt="" src="${hudIcon('food')}"><span class="v ${T.food < pop ? 'red' : ''}">${fmt(T.food)}</span></div>
+    <div class="r" title="${t('wood')}"><img class="k ico" alt="" src="${hudIcon('wood')}"><span class="v">${fmt(T.wood)}</span></div>
+    <div class="r" title="${t('stone')}"><img class="k ico" alt="" src="${hudIcon('stone')}"><span class="v">${fmt(T.stone)}</span></div>
+    <div class="r" title="${t('metal')}"><img class="k ico" alt="" src="${hudIcon('metal')}"><span class="v">${fmt(T.metal)}</span></div>
+    <div class="r" title="${t('discoveries')}"><img class="k ico" alt="" src="${hudIcon('discovery')}"><span class="v">${Object.keys(P.found).length}<span class="dim">/${Object.keys(DISCOVERIES).length}</span></span></div>`;
   if (P.faith > lastFaith + 20 && !isSandbox()) $('#res .faith .v').classList.add('pulse');
   lastFaith = P.faith;
 

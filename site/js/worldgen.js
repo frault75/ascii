@@ -5,8 +5,10 @@ import { mulberry32, fbm1, fbm2, smooth, clamp } from './util.js';
 import { plantTree, bindWorld, step } from './sim.js';
 import { G } from './state.js';
 
-export const WORLD_W = 400;
+export const WORLD_W = 720;
 export const WORLD_H = 150;
+// biomes: 0 plains · 1 forest · 2 mountains · 3 desert · 4 coast · 5 jungle · 6 tundra
+export const BIOME = { PLAINS: 0, FOREST: 1, MOUNTAIN: 2, DESERT: 3, COAST: 4, JUNGLE: 5, TUNDRA: 6 };
 
 export function generate(seed, onProgress = () => {}) {
   const rng = mulberry32(seed);
@@ -17,24 +19,41 @@ export function generate(seed, onProgress = () => {}) {
   const sea = 72;
   W.sea = sea;
 
-  const oceanLeft = rng() < 0.5;
-  const oceanW = 50 + ((rng() * 30) | 0);
-  const distOcean = (x) => (oceanLeft ? x - oceanW : w - oceanW - x); // <0 inside ocean
+  // a sea on each side, the land in between split into climate regions
+  const oceanL = 52 + ((rng() * 26) | 0), oceanR = 52 + ((rng() * 26) | 0);
+  const distOcean = (x) => Math.min(x - oceanL, w - oceanR - x); // <0 inside the sea
+  const landW = w - oceanL - oceanR;
+  const others = [BIOME.TUNDRA, BIOME.DESERT, BIOME.JUNGLE, BIOME.FOREST];
+  for (let k = others.length - 1; k > 0; k--) { const j = (rng() * (k + 1)) | 0; [others[k], others[j]] = [others[j], others[k]]; }
+  const regions = [others[0], others[1], -1, others[2], others[3]]; // -1: temperate heartland
+  const regionAt = (x) => {
+    const u = (x - oceanL) / landW + fbm1(x * 0.01 + 77, 2, s + 30) * 0.05;
+    return regions[clamp(Math.floor(u * 5), 0, 4)];
+  };
 
   // ── heights & biomes ──
   const surf = new Float32Array(w);
   const dirtDepth = new Uint8Array(w);
-  const hasVolcano = rng() < 0.65;
-  const vx = oceanLeft ? Math.floor(w * (0.62 + rng() * 0.25)) : Math.floor(w * (0.13 + rng() * 0.25));
+  const hasVolcano = rng() < 0.7;
+  const vx = Math.floor(oceanL + 40 + rng() * (landW - 80));
+  const isle = [rng() < 0.75 ? oceanL * (0.35 + rng() * 0.3) : -99, rng() < 0.75 ? w - oceanR * (0.35 + rng() * 0.3) : -99];
   for (let x = 0; x < w; x++) {
-    const mtn = smooth(0.26, 0.62, fbm1(x * 0.006 + 40, 3, s));
-    const hills = fbm1(x * 0.022, 3, s + 1) * 7 + fbm1(x * 0.08, 2, s + 2) * 2.2;
+    const reg = regionAt(x);
+    const cold = reg === BIOME.TUNDRA, dry = reg === BIOME.DESERT, wet = reg === BIOME.JUNGLE;
+    const mtn = smooth(0.26, 0.62, fbm1(x * 0.006 + 40, 3, s)) * (dry ? 0.5 : wet ? 0.7 : 1) + (cold ? 0.25 : 0);
+    let hills = fbm1(x * 0.022, 3, s + 1) * 7 + fbm1(x * 0.08, 2, s + 2) * 2.2;
+    if (dry) hills = hills * 0.5 + Math.sin(x * 0.11 + fbm1(x * 0.03, 2, s + 31) * 3) * 2.6; // dunes
     const peaks = 1 - Math.abs(fbm1(x * 0.028, 3, s + 9));
-    let y = 63 - mtn * (10 + 24 * peaks * peaks) + hills;
+    let y = 63 - Math.min(1, mtn) * (10 + 24 * peaks * peaks) + hills + (wet ? 2 : 0);
     const dOc = distOcean(x);
     if (dOc < 30) {
       const k = smooth(30, -14, dOc);
       y = y + (sea + 18 - y) * k;
+    }
+    // little islands out at sea
+    for (const ix of isle) {
+      const dx = Math.abs(x - ix);
+      if (dx < 8) y = Math.min(y, sea - 2 - (1 - dx / 8) * 3 + fbm1(x * 0.3, 2, s + 32));
     }
     if (hasVolcano) {
       const dx = Math.abs(x - vx);
@@ -45,13 +64,13 @@ export function generate(seed, onProgress = () => {}) {
       }
     }
     surf[x] = clamp(y, 18, h - 30);
-    dirtDepth[x] = 3 + ((fbm1(x * 0.05, 2, s + 3) + 1) * 3) | 0;
-    let b = 0;
-    if (dOc < 0) b = 4;
-    else if (dOc < 10) b = 4;
-    else if (mtn > 0.55) b = 2;
-    else if (fbm1(x * 0.01 + 900, 2, s + 4) > 0.32) b = 3;
-    else if (fbm1(x * 0.015 + 300, 2, s + 5) > -0.05) b = 1;
+    dirtDepth[x] = (wet ? 5 : 3) + ((fbm1(x * 0.05, 2, s + 3) + 1) * 3) | 0;
+    let b;
+    if (hasVolcano && Math.abs(x - vx) < 20) b = BIOME.MOUNTAIN;
+    else if (dOc < 10) b = BIOME.COAST;
+    else if (reg === -1) b = mtn > 0.55 ? BIOME.MOUNTAIN : fbm1(x * 0.015 + 300, 2, s + 5) > -0.05 ? BIOME.FOREST : BIOME.PLAINS;
+    else if (mtn > 0.6 && !cold) b = BIOME.MOUNTAIN;
+    else b = reg;
     W.biome[x] = b;
   }
   onProgress(0.15);
@@ -71,7 +90,8 @@ export function generate(seed, onProgress = () => {}) {
       const depth = y - sy;
       let e;
       if (y >= bedrock) e = E.BEDROCK;
-      else if (b === 4 || b === 3 || (sy >= sea - 2 && distOcean(x) < 16)) e = depth < (b === 3 ? 6 : 4) ? E.SAND : E.STONE;
+      else if (hasVolcano && Math.abs(x - vx) < 20) e = depth < 2 && rng() < 0.35 ? E.OBSIDIAN : E.STONE; // a volcano is rock, it doesn't slump
+      else if (b === BIOME.COAST || b === BIOME.DESERT || (sy >= sea - 2 && distOcean(x) < 16)) e = depth < (b === BIOME.DESERT ? 9 : 4) ? E.SAND : E.STONE;
       else if (sy < sea - 30) e = E.STONE;
       else if (depth === 0) e = sy >= sea ? E.SAND : E.GRASS;
       else if (depth < dd) e = E.DIRT;
@@ -79,9 +99,10 @@ export function generate(seed, onProgress = () => {}) {
       t[i] = e;
       v[i] = (rng() * 256) | 0;
     }
-    // snow caps
-    if (sy < sea - 31) {
-      for (let k = 1; k <= 2; k++) if (sy - k > 1) t[(sy - k) * w + x] = E.SNOW;
+    // snow caps, and the tundra under a permanent blanket
+    if (sy < sea - 31 || b === BIOME.TUNDRA) {
+      const n = b === BIOME.TUNDRA ? 2 + ((rng() * 2) | 0) : 2;
+      for (let k = 1; k <= n; k++) if (sy - k > 1) t[(sy - k) * w + x] = E.SNOW;
     }
   }
   onProgress(0.3);
@@ -148,6 +169,35 @@ export function generate(seed, onProgress = () => {}) {
     W.volcano = { x: vx, y: top };
   }
 
+  // ── islands floating in the sky: stone keel, a lawn, a few trees, treasure ──
+  const nSky = 2 + ((rng() * 3) | 0);
+  const skyTops = [];
+  for (let k = 0; k < nSky; k++) {
+    const cx = Math.floor(oceanL + 30 + ((k + 0.2 + rng() * 0.6) / nSky) * (landW - 60));
+    const hw = 7 + ((rng() * 7) | 0);
+    let ground = h;
+    for (let x = cx - hw - 2; x <= cx + hw + 2; x++) ground = Math.min(ground, surf[x]);
+    const top = Math.round(Math.max(10, Math.min(ground - 16, 18 + rng() * 14)));
+    if (ground - top < 24) continue;
+    for (let x = cx - hw - 1; x <= cx + hw + 1; x++) W.sky[x] = top + 18;
+    const keel = 6 + rng() * 6;
+    for (let x = cx - hw; x <= cx + hw; x++) {
+      const u = (x - cx) / hw;
+      const bump = Math.round(fbm1(x * 0.4, 2, s + 40 + k) * 1.2);
+      const ty = top + bump + (Math.abs(u) > 0.8 ? 1 : 0);
+      const depth = Math.max(4, Math.round((1 - u * u) ** 0.8 * keel + fbm1(x * 0.5, 2, s + 50 + k) * 1.5));
+      for (let y = ty; y < ty + depth && y < h - 2; y++) {
+        const i = y * w + x;
+        const dd = y - ty;
+        t[i] = dd === 0 ? E.GRASS : dd < 3 ? E.DIRT : E.STONE;
+        v[i] = (rng() * 256) | 0;
+        if (dd >= 3 && dd < depth - 1 && rng() < 0.12) t[i] = rng() < 0.5 ? E.GOLD : E.CRYSTAL;
+      }
+      if (Math.abs(u) < 0.25 && rng() < 0.4) { const i = (ty + Math.min(depth - 1, 3)) * w + x; t[i] = E.STARSTONE; }
+    }
+    skyTops.push([cx, hw, top]);
+  }
+
   W.borders();
   W.computeSurface();
   onProgress(0.55);
@@ -161,46 +211,61 @@ export function generate(seed, onProgress = () => {}) {
     const top = t[i];
     const b = W.biome[x];
     if (top === E.GRASS && t[i - w] === E.EMPTY) {
-      const dens = b === 1 ? 0.22 : b === 2 ? 0.08 : 0.06;
-      if (x - lastTree > 3 && rng() < dens) {
+      const dens = b === BIOME.FOREST ? 0.22 : b === BIOME.JUNGLE ? 0.3 : b === BIOME.MOUNTAIN ? 0.08 : 0.06;
+      if (x - lastTree > (b === BIOME.JUNGLE ? 4 : 3) && rng() < dens) {
         let sp = SP.OAK;
         const q = rng();
-        if (b === 2 || sy < sea - 16) sp = SP.PINE;
-        else if (b === 1) sp = q < 0.3 ? SP.PINE : q < 0.5 ? SP.BIRCH : q < 0.6 ? SP.CHERRY : SP.OAK;
+        if (b === BIOME.MOUNTAIN || sy < sea - 16) sp = SP.PINE;
+        else if (b === BIOME.JUNGLE) sp = q < 0.6 ? SP.JUNGLE : q < 0.8 ? SP.PALM : SP.CHERRY;
+        else if (b === BIOME.FOREST) sp = q < 0.3 ? SP.PINE : q < 0.5 ? SP.BIRCH : q < 0.6 ? SP.CHERRY : SP.OAK;
         else sp = q < 0.15 ? SP.CHERRY : q < 0.4 ? SP.BIRCH : SP.OAK;
         plantTree(i - w, sp, 0.8 + rng() * 0.5);
         lastTree = x;
-      } else if (rng() < 0.08) {
+      } else if (rng() < (b === BIOME.JUNGLE ? 0.2 : 0.08)) {
         t[i - w] = E.PLANT; d[i - w] = 1 + ((rng() * 3) | 0); a[i - w] = 1; v[i - w] = (rng() * 256) | 0;
       }
-    } else if (top === E.SAND && t[i - w] === E.EMPTY && b === 4 && sy < sea && x - lastTree > 5 && rng() < 0.08) {
+    } else if (top === E.SNOW && t[i - w] === E.EMPTY && b === BIOME.TUNDRA && x - lastTree > 4 && rng() < 0.12) {
+      plantTree(i - w, SP.PINE, 0.7 + rng() * 0.5);
+      lastTree = x;
+    } else if (top === E.SAND && t[i - w] === E.EMPTY && b === BIOME.DESERT && x - lastTree > 6 && rng() < 0.1) {
+      plantTree(i - w, SP.CACTUS, 0.8 + rng() * 0.6);
+      lastTree = x;
+    } else if (top === E.SAND && t[i - w] === E.EMPTY && b === BIOME.COAST && sy < sea && x - lastTree > 5 && rng() < 0.1) {
       plantTree(i - w, SP.PALM, 0.9 + rng() * 0.3);
       lastTree = x;
     }
   }
+  for (const [cx, hw, top] of skyTops) {
+    for (let x = cx - hw + 2; x <= cx + hw - 2; x += 4 + ((rng() * 3) | 0)) {
+      let y = top - 2;
+      while (y < top + 4 && t[(y + 1) * w + x] !== E.GRASS) y++;
+      if (t[(y + 1) * w + x] === E.GRASS && t[y * w + x] === E.EMPTY) plantTree(y * w + x, rng() < 0.5 ? SP.CHERRY : SP.OAK, 0.6 + rng() * 0.3);
+    }
+  }
+  W.skyIslands = skyTops.map(([x, hw, y]) => ({ x, w: hw * 2 + 1, y }));
   // fish
   let fish = 0;
-  for (let k = 0; k < 6000 && fish < 45; k++) {
+  for (let k = 0; k < 12000 && fish < 80; k++) {
     const x = 2 + ((rng() * (w - 4)) | 0), y = sea + 2 + ((rng() * 20) | 0);
     const i = y * w + x;
     if (y < h - 2 && t[i] === E.WATER && t[i - w] === E.WATER) { t[i] = E.FISH; a[i] = rng() < 0.5 ? 1 : 0; v[i] = (rng() * 256) | 0; fish++; }
   }
   // worms
-  for (let k = 0; k < 3000; k++) {
+  for (let k = 0; k < 5400; k++) {
     const x = 2 + ((rng() * (w - 4)) | 0);
     const y = W.surf[x] + 1 + ((rng() * 5) | 0);
     const i = y * w + x;
     if (t[i] === E.DIRT && rng() < 0.01) t[i] = E.WORM;
   }
   // birds
-  for (let k = 0; k < 9; k++) {
+  for (let k = 0; k < 16; k++) {
     const x = 10 + ((rng() * (w - 20)) | 0);
     const y = Math.max(4, W.surf[x] - 10 - ((rng() * 10) | 0));
     const i = y * w + x;
     if (t[i] === E.EMPTY) { t[i] = E.BIRD; a[i] = rng() < 0.5 ? 1 : 0; }
   }
   // clouds
-  const nClouds = 4 + ((rng() * 4) | 0);
+  const nClouds = 7 + ((rng() * 6) | 0);
   for (let k = 0; k < nClouds; k++) {
     makeCloud(W, 10 + rng() * (w - 20), 6 + rng() * 14, 6 + rng() * 10, 20 + rng() * 40, 0, rng);
   }
@@ -228,7 +293,7 @@ export function makeCloud(W, cx, cy, rx, moist, flags, rng = Math.random) {
       const n = fbm2(x * 0.25, y * 0.4, 2, 77) * 0.35;
       if (dx * dx + dy * dy < 1 + n && (dy < 0.6 || rng() < 0.5)) {
         const i = y * w + x;
-        if (t[i] === E.EMPTY) { t[i] = E.CLOUD; d[i] = moist; a[i] = flags; v[i] = (rng() * 256) | 0; }
+        if (t[i] === E.EMPTY) { t[i] = E.CLOUD; d[i] = moist; a[i] = flags; v[i] = (rng() * 256) | 0; if (W.wake) W.wake(i); }
       }
     }
   }

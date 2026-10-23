@@ -69,12 +69,12 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 #clock .bar { font-size: 9px; color: var(--faint); letter-spacing: 0; margin-top: 1px; white-space: pre; }
 #res { margin-left: auto; padding: 6px 12px; display: grid; grid-template-columns: repeat(3, auto); gap: 2px 18px; align-content: center; }
 #res .r { display: flex; align-items: baseline; gap: 6px; white-space: nowrap; }
-#res .r .k { color: var(--dim); font-size: 10px; width: 14px; text-align: center; }
+#res .r .k { width: 14px; height: 14px; align-self: center; }
 #res .r .v { font-weight: 700; font-size: 13px; min-width: 36px; }
 #res .r .s { color: var(--dim); font-size: 10px; }
 #res .faith { grid-column: 1 / -1; display: flex; align-items: baseline; gap: 8px; border-bottom: 1px dashed var(--line); padding-bottom: 3px; margin-bottom: 2px; }
 #res .faith .v { font-size: 20px; color: var(--cyan); text-shadow: 0 0 12px rgba(111, 242, 255, .6); }
-#res .faith .k { font-size: 16px; color: var(--cyan); width: auto; }
+#res .faith .k { width: 18px; height: 18px; filter: drop-shadow(0 0 6px rgba(111, 242, 255, .7)); }
 #res .faith .s { color: var(--cyan); opacity: .7; }
 #res .mood { font-size: 10px; color: var(--dim); }
 .pulse { animation: pulse .5s ease; }
@@ -130,14 +130,18 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   position: relative; flex: 0 0 auto; width: 64px; height: 56px; display: flex; flex-direction: column; align-items: center; justify-content: center;
   border: 1px solid var(--line); background: rgba(255, 255, 255, .02); transition: transform .12s, border-color .12s, background .12s;
 }
-.tool .g { font-size: 22px; line-height: 1; height: 26px; display: flex; align-items: center; text-shadow: 0 0 10px currentColor; }
+.tool .g { line-height: 1; height: 26px; display: flex; align-items: center; }
+.ico { image-rendering: pixelated; image-rendering: crisp-edges; }
+.tool .ico { width: 26px; height: 26px; filter: drop-shadow(0 0 5px color-mix(in srgb, var(--tc) 55%, transparent)); }
+.ico.s { width: 16px; height: 16px; vertical-align: -3px; }
+.fi { display: inline-block; width: .72em; height: .72em; background-size: contain; background-repeat: no-repeat; image-rendering: pixelated; vertical-align: -.05em; margin: 0 .08em; filter: drop-shadow(0 0 3px rgba(111, 242, 255, .7)); }
 .tool .n { font-size: 9px; color: var(--dim); margin-top: 4px; letter-spacing: .04em; max-width: 60px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tool .k { position: absolute; top: 2px; left: 4px; font-size: 8px; color: var(--faint); }
 .tool .c { position: absolute; top: 2px; right: 4px; font-size: 8px; color: var(--cyan); }
 .tool:hover { border-color: var(--line2); background: rgba(255, 255, 255, .05); transform: translateY(-2px); }
 .tool.on { border-color: var(--amber); background: rgba(255, 207, 90, .1); box-shadow: 0 0 18px rgba(255, 207, 90, .25), inset 0 0 12px rgba(255, 207, 90, .12); }
 .tool.on .n { color: var(--amber); }
-.tool.lock .g { color: var(--faint) !important; text-shadow: none; }
+.tool.lock .g { filter: grayscale(1) brightness(.55); opacity: .7; }
 .tool.lock .n { color: var(--faint); }
 .tool.lock .c { color: var(--dim); }
 .tool.lock.afford { border-color: rgba(111, 242, 255, .45); animation: afford 1.6s ease-in-out infinite; }
@@ -329,3 +333,5 @@ pre.help { margin: 0; white-space: pre-wrap; font: inherit; font-size: 11px; col
   #tx .tb { font-size: 12px; }
   #tx .face { width: 48px; height: 48px; }
 }
+
+.nbi { width: 16px; height: 16px; display: block; margin: 0 auto 2px; }

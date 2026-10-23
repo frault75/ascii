@@ -1,7 +1,7 @@
 // ─── powers.js ── what the player's hand can do to the world ───────────────
 import { G, emit } from './state.js';
 import { E, K, KIND, STAND, SP } from './elements.js';
-import { putCell, ignite, strike, explode, plantTree } from './sim.js';
+import { putCell, ignite, strike, explode, plantTree, speciesFor } from './sim.js';
 import { spawnFx, floatText } from './fx.js';
 import { TOOL, isUnlocked, spend, canSpend, isSandbox } from './progress.js';
 import { spawnVillager, foundTribe, say } from './life.js';
@@ -89,7 +89,7 @@ export function useTool(id, cx, cy, r, held, drag) {
       const below = t[g.i + W.w];
       if (below !== E.DIRT && below !== E.GRASS && below !== E.SAND) { floatText(cx, cy - 1, '?', [255, 160, 120]); break; }
       const b = W.biome[cx];
-      const sp = below === E.SAND ? SP.PALM : b === 2 ? SP.PINE : [SP.OAK, SP.OAK, SP.BIRCH, SP.CHERRY, SP.PINE][(R() * 5) | 0];
+      const sp = speciesFor(cx, cy, below);
       plantTree(g.i, sp);
       stat(E.SAPLING);
       emit('placed', E.SAPLING, 1, cx, cy);
@@ -190,6 +190,7 @@ function push(cx, cy, r, dx, dy) {
     if (rx < 1 || rx >= W.w - 1 || ry < 1 || ry >= W.h - 1) continue;
     W.t[j] = W.t[i]; W.d[j] = W.d[i]; W.v[j] = W.v[i]; W.a[j] = W.a[i];
     W.t[i] = 0; W.d[i] = 0; W.a[i] = 0;
+    W.wake(i); W.wake(j);
   }
   if (R() < 0.3) spawnFx({ x: cx, y: cy, vx: sx * 0.6, vy: sy * 0.3, life: 30, glyph: '~', color: [190, 230, 255], drag: 0.95 });
 }
@@ -285,6 +286,7 @@ export function updateQuake() {
       const k2 = t[i + W.w] === E.EMPTY ? i + W.w : j;
       W.t[k2] = tt === E.STONE ? (R() < 0.5 ? E.SAND : E.STONE) : tt; W.v[k2] = W.v[i];
       W.t[i] = 0;
+      W.wake(i); W.wake(k2);
     }
   }
 }

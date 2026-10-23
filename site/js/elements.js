@@ -15,7 +15,7 @@ export const N = 43;
 export const K = { EMPTY: 0, SOLID: 1, POWDER: 2, SOIL: 3, LIQUID: 4, GAS: 5, LIFE: 6, SPECIAL: 7 };
 
 // tree species stored in the aux field of WOOD / LEAF / SAPLING
-export const SP = { OAK: 0, PINE: 1, BIRCH: 2, CHERRY: 3, PALM: 4 };
+export const SP = { OAK: 0, PINE: 1, BIRCH: 2, CHERRY: 3, PALM: 4, CACTUS: 5, JUNGLE: 6 };
 
 // building materials stored in v[] of STRUCT cells
 export const MAT = { WOOD: 0, STONE: 1, ROOF: 2, WINDOW: 3, DOOR: 4, METAL: 5, PANE: 6, CLOTH: 7, GOLD: 8, NEON: 9, HULL: 10, FLAME: 11, BRICK: 12, DARK: 13 };

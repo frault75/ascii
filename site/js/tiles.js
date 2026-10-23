@@ -170,6 +170,15 @@ def('birch', (g, r) => {
   g.rect(1, 0, 8, AH);
   for (let k = 0; k < 4; k++) { const y = Math.floor(r() * AH); g.rect(Math.floor(1 + r() * 4), y, 3, 1, 0); }
 }, true);
+def('cactus', (g) => {
+  g.fill(1);
+  for (let y = 0; y < AH; y++) { g.set(3, y, y % 4 === 1 ? 1 : 0); g.set(6, y, y % 4 === 3 ? 1 : 0); }
+  for (const [x, y] of [[0, 3], [9, 6], [0, 11], [9, 13]]) g.set(x, y, 0);
+}, true);
+def('cactusTop', (g) => {
+  g.blob(5, 8, 4.5, 6.5); g.rect(0.5, 8, 9, 8);
+  g.set(3, 6, 0); g.set(6, 9, 0);
+});
 def('palm', (g) => { g.rect(2, 0, 6, AH); g.rect(1, 0, 8, 2); g.rect(2, 2, 6, 1, 0); g.rect(2, 9, 6, 1, 0); }, true);
 def('branchR', (g) => g.line(0.5, 15, 9.5, 1, 2));
 def('branchL', (g) => g.line(0.5, 1, 9.5, 15, 2));
@@ -190,6 +199,18 @@ many(2, 'pine', (g, r, k) => {
   }
   for (let n = 0; n < 4; n++) g.set(r() * AW, 2 + r() * 9, 0);
 }, true);
+// palm fronds: a midrib with leaflets hanging from it
+const leaflets = (g, pts) => {
+  for (let k = 0; k < pts.length - 1; k++) g.line(pts[k][0], pts[k][1], pts[k + 1][0], pts[k + 1][1], 2);
+  for (let k = 0; k < pts.length; k++) { const [x, y] = pts[k]; g.line(x, y + 1, x - 0.5, y + 4.5, 1); g.line(x + 0.6, y + 1, x + 1.2, y + 4, 1); }
+};
+def('frondMid', (g) => leaflets(g, [[0, 6], [3, 5.5], [6, 5.5], [10, 6]]));
+def('frondTipL', (g) => leaflets(g, [[10, 5], [7, 5.5], [4, 7.5], [1.5, 11]]));
+def('frondTipR', (g) => leaflets(g, [[0, 5], [3, 5.5], [6, 7.5], [8.5, 11]]));
+def('frondUp', (g) => {
+  g.line(5, 16, 5, 6, 2); g.line(5, 6, 3.5, 2, 2);
+  for (let y = 4; y < 15; y += 2) { g.line(5, y, 1.5, y + 2.5, 1); g.line(6, y, 9, y + 2.5, 1); }
+});
 many(2, 'frond', (g, r, k) => {
   for (let s = -1; s <= 1; s += 2) {
     for (let t = 0; t < 10; t++) {

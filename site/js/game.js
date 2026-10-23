@@ -393,6 +393,7 @@ function launch() {
       if (W.t[i] === E.STRUCT && W.a[i] === b.id) {
         cells.push({ dx: x - b.x, dy: y - b.y, g: W.d[i], m: W.v[i] });
         W.t[i] = E.EMPTY; W.a[i] = 0;
+        if (W.wake) W.wake(i);
       }
     }
   }

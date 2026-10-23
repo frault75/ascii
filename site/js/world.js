@@ -15,6 +15,7 @@ export class World {
     this.c = new Uint8Array(n); // electric charge
     this.surf = new Int16Array(w); // first terrain row per column
     this.biome = new Uint8Array(w);
+    this.sky = new Uint8Array(w); // per column: floating islands above this row are not ground
     this.tick = 0;
     this.F = 1;
     this.counts = new Uint32Array(64);
@@ -42,20 +43,21 @@ export class World {
     this.d[i] = d;
     this.a[i] = a;
     this.v[i] = v;
+    if (this.wake) this.wake(i);
   }
   computeSurface(x0 = 0, x1 = this.w) {
     const { t, w, h, surf } = this;
     for (let x = Math.max(0, x0); x < Math.min(w, x1); x++) {
-      let y = 1;
+      let y = this.sky[x] ? this.sky[x] + 1 : 1;
       for (; y < h - 1; y++) {
         const tt = t[y * w + x];
         if (!TERRAIN[tt]) continue;
         // falling grains and raindrops are not ground
         const k = KIND[tt];
-        if (k === K.POWDER || k === K.LIQUID) {
+        if (k === K.POWDER || k === K.LIQUID || k === K.SOIL) {
           // follow the run of loose matter: if it ends in air it is still falling
           let yy = y + 1;
-          while (yy < h - 1 && (KIND[t[yy * w + x]] === K.POWDER || KIND[t[yy * w + x]] === K.LIQUID)) yy++;
+          while (yy < h - 1 && (KIND[t[yy * w + x]] === K.POWDER || KIND[t[yy * w + x]] === K.LIQUID || KIND[t[yy * w + x]] === K.SOIL)) yy++;
           const b = t[yy * w + x];
           // falling, or resting on a tree / building rather than the ground
           if (b === E.EMPTY || KIND[b] === K.GAS || b === E.CLOUD || !TERRAIN[b]) { y = yy - 1; continue; }

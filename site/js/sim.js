@@ -7,12 +7,50 @@ let W, t, d, v, a, s, c, w, h, F, env;
 const R = Math.random;
 let N8, N4, UPN;
 
+// local climate: the tundra stays frozen, deserts and jungles run warm
+const CLIMATE = [0, 0, -2, 8, 1, 5, -14];
+const tempAt = (x) => env.temp + (CLIMATE[W.biome[x]] || 0);
+
+// ── sleeping chunks ────────────────────────────────────────────────────────
+// Regions where nothing moved for a while (deep rock, a calm sea) are only
+// visited one tick in SLOW. Every write wakes its chunk (and the neighbour it
+// touches); the slow processes of still matter (grass, evaporation, melting…)
+// multiply their odds by RM on those visits so their rates stay the same.
+const CS = 16, SLOW = 16, WAKE = 48;
+let CW = 0, CH = 0, awake = null, RM = 1;
+// matter that keeps its chunk awake as long as it is there
+const ACTIVE = new Uint8Array(64);
+for (const e of [E.LAVA, E.FIRE, E.EMBER, E.SMOKE, E.STEAM, E.ACID, E.SEED, E.SAPLING, E.CROP, E.CLOUD, E.BOLT, E.GLITCH, E.FISH, E.BIRD, E.BUTTERFLY, E.FIREFLY]) ACTIVE[e] = 1;
+
+function wake(i) {
+  const x = i % w, y = (i - x) / w;
+  const cx = x >> 4, cy = y >> 4, lx = x & 15, ly = y & 15;
+  const x0 = lx === 0 && cx > 0 ? cx - 1 : cx, x1 = lx === 15 && cx < CW - 1 ? cx + 1 : cx;
+  const y0 = ly === 0 && cy > 0 ? cy - 1 : cy, y1 = ly === 15 && cy < CH - 1 ? cy + 1 : cy;
+  for (let yy = y0; yy <= y1; yy++) for (let xx = x0; xx <= x1; xx++) awake[yy * CW + xx] = WAKE;
+}
+export function wakeAt(i) { if (awake) wake(i); }
+export function wakeRect(x0, y0, x1, y1) {
+  if (!awake) return;
+  for (let cy = Math.max(0, (y0 >> 4) - 1); cy <= Math.min(CH - 1, (y1 >> 4) + 1); cy++)
+    for (let cx = Math.max(0, (x0 >> 4) - 1); cx <= Math.min(CW - 1, (x1 >> 4) + 1); cx++) awake[cy * CW + cx] = WAKE;
+}
+export function wakeAll() { if (awake) awake.fill(WAKE); }
+export function sleepStats() {
+  let n = 0;
+  for (let k = 0; k < awake.length; k++) if (awake[k]) n++;
+  return { awake: n, total: awake.length };
+}
+
 export function bindWorld(world) {
   W = world;
   ({ t, d, v, a, s, c, w, h } = world);
   N8 = [-w - 1, -w, -w + 1, -1, 1, w - 1, w, w + 1];
   N4 = [-w, -1, 1, w];
   UPN = [-w - 1, -w, -w + 1, -1, 1, -1, 1, w - 1, w + 1]; // leaf spreading: up, sideways, a bit down
+  CW = Math.ceil(w / CS); CH = Math.ceil(h / CS);
+  awake = new Uint8Array(CW * CH).fill(WAKE);
+  world.wake = wake;
 }
 
 // a discovery only counts when it happens where the player is looking
@@ -33,12 +71,15 @@ function swap(i, j) {
   x = v[i]; v[i] = v[j]; v[j] = x;
   x = a[i]; a[i] = a[j]; a[j] = x;
   s[i] = F; s[j] = F;
+  wake(i); wake(j);
 }
 function put(i, type, dd = 0, aa = 0) {
   t[i] = type; d[i] = dd; a[i] = aa; v[i] = (R() * 256) | 0; s[i] = F;
+  wake(i);
 }
 function clear(i) {
   t[i] = 0; d[i] = 0; a[i] = 0; s[i] = F;
+  wake(i);
 }
 export { put as putCell };
 
@@ -130,7 +171,7 @@ export function ignite(j) {
       if (R() < 0.05) disc('oilfire', j);
       break;
     case E.GRASS:
-      t[j] = E.DIRT; s[j] = F;
+      t[j] = E.DIRT; s[j] = F; wake(j);
       if (t[j - w] === 0) put(j - w, E.FIRE, 20 + R() * 25);
       break;
     case E.BIRD: case E.BUTTERFLY: case E.FIREFLY:
@@ -270,9 +311,9 @@ export function step() {
   W.F = F;
   W.tick++;
   const counts = W.counts;
-  counts.fill(0);
   const grow = G.fastGrow ? 1 : 0.025 * env.grow;
   const tick = W.tick;
+  for (let k = 0; k < awake.length; k++) if (awake[k]) awake[k]--;
 
   // pending explosions
   if (W.booms.length) {
@@ -299,13 +340,21 @@ export function step() {
   for (let y = h - 2; y >= 1; y--) {
     const ltr = ((y ^ tick) & 1) === 0;
     const row = y * w;
-    for (let k = 1; k < w - 1; k++) {
-      const x = ltr ? k : w - 1 - k;
+    const cy = y >> 4;
+    for (let kc = 0; kc < CW; kc++) {
+      const cx = ltr ? kc : CW - 1 - kc;
+      const ci = cy * CW + cx;
+      if (awake[ci]) RM = 1;
+      else if (((tick + cx * 5 + cy * 3) & (SLOW - 1)) === 0) RM = SLOW;
+      else continue;
+      const xa = Math.max(1, cx * CS), xb = Math.min(w - 2, cx * CS + CS - 1);
+    for (let k = xa; k <= xb; k++) {
+      const x = ltr ? k : xb - (k - xa);
       const i = row + x;
       const type = t[i];
       if (type === 0) continue;
-      counts[type]++;
       if (s[i] === F) continue;
+      if (ACTIVE[type]) awake[ci] = WAKE;
 
       switch (type) {
         case E.SAND:
@@ -313,8 +362,8 @@ export function step() {
           break;
 
         case E.DIRT:
-          if (!soil(i, type) && t[i - w] === 0 && y <= W.surf[x] + 1 && R() < 0.0006 * env.grow && W.biome[x] !== 3) {
-            t[i] = E.GRASS;
+          if (!soil(i, type) && t[i - w] === 0 && y <= W.surf[x] + 1 && R() < 0.0006 * env.grow * RM && W.biome[x] !== 3) {
+            t[i] = E.GRASS; wake(i);
           }
           break;
 
@@ -322,14 +371,14 @@ export function step() {
           if (soil(i, type)) break;
           const up = t[i - w];
           if (up !== 0 && (KIND[up] === K.POWDER || KIND[up] === K.SOIL || KIND[up] === K.LIQUID || up === E.STONE || up === E.ICE)) {
-            if (up !== E.SNOW && R() < 0.01) t[i] = E.DIRT;
+            if (up !== E.SNOW && R() < 0.01 * RM) { t[i] = E.DIRT; wake(i); }
             break;
           }
-          if (R() < 0.02 * env.grow) {
+          if (R() < 0.02 * env.grow * RM) {
             const j = i + N8[(R() * 8) | 0];
-            if (t[j] === E.DIRT && t[j - w] === 0) { t[j] = E.GRASS; s[j] = F; }
+            if (t[j] === E.DIRT && t[j - w] === 0) { t[j] = E.GRASS; s[j] = F; wake(j); }
           }
-          if (up === 0 && env.season === 0 && R() < 0.00002) {
+          if (up === 0 && env.season === 0 && R() < 0.00002 * RM) {
             put(i - w, E.PLANT, 1 + R() * 3, 1);
           }
           break;
@@ -339,10 +388,10 @@ export function step() {
           if (liquid(i, type, 5)) break;
           // thin puddles soak into the soil, keeping the water cycle in balance
           const bw = t[i + w];
-          if ((bw === E.DIRT || bw === E.GRASS || bw === E.SAND || bw === E.SNOW) && y < W.sea - 1 && R() < (t[i - w] !== E.WATER ? 0.008 : 0.0025)) { clear(i); break; }
+          if ((bw === E.DIRT || bw === E.GRASS || bw === E.SAND || bw === E.SNOW) && y < W.sea - 1 && R() < (t[i - w] !== E.WATER ? 0.008 : 0.0025) * RM) { clear(i); break; }
           if (t[i - w] === 0) {
-            if (env.temp < -1 && R() < 0.0004) { t[i] = E.ICE; disc('ice', i); }
-            else if (R() < 0.00004 * env.evap + W.excess) {
+            if (tempAt(x) < -1 && R() < 0.0004 * RM) { t[i] = E.ICE; wake(i); disc('ice', i); }
+            else if (R() < (0.00004 * env.evap + W.excess) * RM) {
               // evaporation keeps oceans from creeping up over the land
               clear(i);
               if (R() < 0.15) spawnFx({ x, y: y - 1, vy: -0.04, life: 50, glyph: '°', color: [200, 220, 240] });
@@ -450,13 +499,13 @@ export function step() {
             }
           } else if (!powder(i, type)) {
             // mountain tops stay frozen
-            const lt = env.temp - Math.max(0, W.sea - 24 - y) * 1.5;
-            if (lt > 2 && R() < 0.0012 * (lt / 10)) put(i, E.WATER);
+            const lt = tempAt(x) - Math.max(0, W.sea - 24 - y) * 1.5;
+            if (lt > 2 && R() < 0.0012 * (lt / 10) * RM) put(i, E.WATER);
             // thick drifts slowly settle so snowfall stays a blanket, not a dune
-            else if (t[i - w] === 0 && t[i + w] === E.SNOW && t[i + 2 * w] === E.SNOW && R() < 0.0015) clear(i);
+            else if (t[i - w] === 0 && t[i + w] === E.SNOW && t[i + 2 * w] === E.SNOW && R() < 0.0015 * RM) clear(i);
           }
           const tj = t[i + N4[(R() * 4) | 0]];
-          if (HOT[tj] || (tj === E.WATER && y > W.sea - 24 && R() < 0.05)) { put(i, E.WATER); disc('melt', i); }
+          if (HOT[tj] || (tj === E.WATER && y > W.sea - 24 && R() < 0.05 * RM)) { put(i, E.WATER); disc('melt', i); }
           break;
         }
 
@@ -464,8 +513,9 @@ export function step() {
           const j = i + N4[(R() * 4) | 0];
           const tj = t[j];
           if (HOT[tj] && R() < 0.2) { put(i, E.WATER); disc('melt', i); break; }
-          if (env.temp > 3 && (tj === 0 || tj === E.WATER) && R() < 0.0008) { put(i, E.WATER); break; }
-          if (env.temp < -2 && tj === E.WATER && (t[j - w] === 0 || (t[j - w] === E.ICE && t[j - 2 * w] === 0)) && R() < 0.003) put(j, E.ICE);
+          const lt = tempAt(x);
+          if (lt > 3 && (tj === 0 || tj === E.WATER) && R() < 0.0008 * RM) { put(i, E.WATER); break; }
+          if (lt < -2 && tj === E.WATER && (t[j - w] === 0 || (t[j - w] === E.ICE && t[j - 2 * w] === 0)) && R() < 0.003 * RM) put(j, E.ICE);
           break;
         }
 
@@ -496,9 +546,9 @@ export function step() {
           if (powder(i, type)) break;
           if (type === E.SEED) {
             const b = t[i + w];
-            if ((b === E.DIRT || b === E.GRASS) && R() < grow * 0.25) sprout(i, x, y);
+            if ((b === E.DIRT || b === E.GRASS || (b === E.SAND && W.biome[x] === 3)) && R() < grow * 0.25) sprout(i, x, y);
             else if (++d[i] > 250 && R() < 0.02) clear(i);
-          } else if (type === E.ASH && env.raining && t[i - w] === 0 && R() < 0.001) clear(i);
+          } else if (type === E.ASH && env.raining && t[i - w] === 0 && R() < 0.001 * RM) clear(i);
           break;
 
         case E.SAPLING:
@@ -507,6 +557,7 @@ export function step() {
 
         case E.LEAF: {
           if (d[i] > 0) {
+            awake[(y >> 4) * CW + (x >> 4)] = WAKE;
             if (R() < grow * 1.6) {
               const j = i + UPN[(R() * UPN.length) | 0];
               if (t[j] === 0) { put(j, E.LEAF, d[i] - 1, a[i]); if (R() < 0.45) d[i]--; }
@@ -514,7 +565,7 @@ export function step() {
             }
             break;
           }
-          if (R() < 0.004 && !woodNear(x, y)) {
+          if (R() < 0.004 * RM && !woodNear(x, y)) {
             if (R() < 0.1) put(i, E.SEED);
             else {
               clear(i);
@@ -523,7 +574,7 @@ export function step() {
             break;
           }
           const sp = a[i] & 7;
-          if (env.season === 2 && sp !== SP.PINE && R() < 0.00003) {
+          if (env.season === 2 && sp !== SP.PINE && R() < 0.00003 * RM) {
             clear(i);
             spawnFx({ x, y, vx: env.wind * 0.15, vy: 0.03, life: 260, glyph: R() < 0.5 ? ',' : '`', color: leafColor(sp), drift: true });
           }
@@ -531,24 +582,25 @@ export function step() {
         }
 
         case E.WOOD:
-          if ((env.season === 0 || env.season === 1) && R() < 0.00025) regrowLeaf(i, x, y);
+          if ((env.season === 0 || env.season === 1) && R() < 0.00025 * RM) regrowLeaf(i, x, y);
           break;
 
         case E.PLANT:
           if (a[i] & 1) {
+            awake[(y >> 4) * CW + (x >> 4)] = WAKE;
             if (R() < grow * 1.5) {
               if (d[i] === 0 || t[i - w] !== 0) { put(i, E.FLOWER); disc('flower', i); }
               else {
                 const ti = i - w;
-                t[ti] = E.PLANT; d[ti] = d[i] - 1; a[ti] = 1; v[ti] = v[i]; s[ti] = F;
+                t[ti] = E.PLANT; d[ti] = d[i] - 1; a[ti] = 1; v[ti] = v[i]; s[ti] = F; wake(ti);
                 a[i] = 0; d[i] = 0;
               }
             }
-          } else if (env.season === 3 && R() < 0.00006) clear(i);
+          } else if (env.season === 3 && R() < 0.00006 * RM) clear(i);
           break;
 
         case E.FLOWER:
-          if (env.season === 3 && R() < 0.0001) clear(i);
+          if (env.season === 3 && R() < 0.0001 * RM) clear(i);
           break;
 
         case E.CROP:
@@ -560,7 +612,7 @@ export function step() {
           const own = fl & 1;
           const raining = own || (env.raining && env.rainBudget > 0);
           if (raining && d[i] > 0 && t[i + w] === 0 && R() < env.rainRate) {
-            const snow = env.temp < 0 || fl & 4;
+            const snow = tempAt(x) < 0 || fl & 4;
             put(i + w, snow ? E.SNOW : E.WATER, 0, 0);
             if (own) { d[i]--; if (fl & 8 && !snow) W.water0 += 0.5; }
             else env.rainBudget -= snow ? 3 : 1;
@@ -576,7 +628,7 @@ export function step() {
           break;
 
         case E.CRYSTAL:
-          if (R() < 0.00012) {
+          if (R() < 0.00012 * RM) {
             const j = i + N8[(R() * 8) | 0];
             if (t[j] === 0 && y > W.surf[x] + 4) {
               let n = 0;
@@ -587,7 +639,7 @@ export function step() {
           break;
 
         case E.SHROOM:
-          if (R() < 0.00008) {
+          if (R() < 0.00008 * RM) {
             const nx = x + ((R() * 7) | 0) - 3, ny = y + ((R() * 5) | 0) - 2;
             if (nx > 1 && nx < w - 2 && ny > 1 && ny < h - 2 && ny > W.surf[nx] + 3) {
               const j = ny * w + nx;
@@ -598,7 +650,7 @@ export function step() {
           break;
 
         case E.TORCH:
-          if (R() < 0.01 && t[i + N4[(R() * 4) | 0]] === E.WATER) clear(i);
+          if (R() < 0.01 * RM && t[i + N4[(R() * 4) | 0]] === E.WATER) clear(i);
           break;
 
         case E.GLITCH: {
@@ -632,6 +684,13 @@ export function step() {
           break;
       }
     }
+    }
+  }
+  RM = 1;
+  // census of all matter (the hot loop skips sleeping chunks, so count apart)
+  if ((tick & 15) === 0 || !counts[E.BEDROCK]) {
+    counts.fill(0);
+    for (let i = 0; i < t.length; i++) counts[t[i]]++;
   }
   if ((tick & 31) === 0) W.computeSurface();
   // global water balance: the more surplus water, the faster it evaporates
@@ -644,20 +703,23 @@ export function step() {
 // ── plants ─────────────────────────────────────────────────────────────────
 function sprout(i, x, y) {
   const r = v[i] / 256;
-  if (r < 0.45) {
-    const b = W.biome[x];
-    let sp;
-    if (b === 2 || y < W.sea - 14) sp = SP.PINE;
-    else if (b === 4 || b === 3) sp = R() < 0.6 ? SP.PALM : SP.OAK;
-    else {
-      const q = R();
-      sp = q < 0.12 ? SP.CHERRY : q < 0.35 ? SP.BIRCH : q < 0.45 ? SP.PINE : SP.OAK;
-    }
-    plantTree(i, sp);
+  if (r < 0.45 || (W.biome[x] === 3 && t[i + w] === E.SAND)) {
+    plantTree(i, speciesFor(x, y, t[i + w]));
     disc('sprout', i);
   } else {
     put(i, E.PLANT, 1 + R() * 4, 1);
   }
+}
+
+// which tree grows here
+export function speciesFor(x, y, ground) {
+  const b = W.biome[x];
+  if (b === 3) return ground === E.SAND ? SP.CACTUS : R() < 0.5 ? SP.PALM : SP.OAK;
+  if (b === 4) return ground === E.SAND || R() < 0.6 ? SP.PALM : SP.OAK;
+  if (b === 5) { const q = R(); return q < 0.6 ? SP.JUNGLE : q < 0.85 ? SP.PALM : SP.CHERRY; }
+  if (b === 2 || b === 6 || y < W.sea - 14) return SP.PINE;
+  const q = R();
+  return q < 0.12 ? SP.CHERRY : q < 0.35 ? SP.BIRCH : q < 0.45 ? SP.PINE : SP.OAK;
 }
 
 export function plantTree(i, sp, scale = 1) {
@@ -668,9 +730,11 @@ export function plantTree(i, sp, scale = 1) {
     case SP.BIRCH: hgt = 7 + R() * 6; canopy = 3; break;
     case SP.CHERRY: hgt = 5 + R() * 4; canopy = 4; break;
     case SP.PALM: hgt = 6 + R() * 5; canopy = 0; break;
+    case SP.CACTUS: hgt = 3 + R() * 3; canopy = 0; break;
+    case SP.JUNGLE: hgt = 11 + R() * 5; canopy = 6; break;
     default: hgt = 6 + R() * 6; canopy = 4;
   }
-  hgt = Math.max(3, Math.min(15, Math.round(hgt * scale)));
+  hgt = Math.max(3, Math.min(sp === SP.JUNGLE ? 15 : 14, Math.round(hgt * scale)));
   // aux layout: sp(3) | branch(1) | dir(2) | init(4) | canopy(3)
   const aux = sp | (1 << 4) | (hgt << 6) | (canopy << 10);
   put(i, E.SAPLING, hgt, aux);
@@ -681,6 +745,11 @@ function growTree(i) {
   const sp = aux & 7, branch = (aux >> 3) & 1, dir = ((aux >> 4) & 3) - 1, init = (aux >> 6) & 15, canopy = (aux >> 10) & 7;
   if (d[i] === 0) {
     if (sp === SP.PALM) { palmCrown(i); return; }
+    if (sp === SP.CACTUS) {
+      t[i] = E.WOOD; a[i] = sp | (branch ? 8 : 0); s[i] = F; wake(i);
+      if (!branch && t[i - w] === 0 && R() < 0.3) put(i - w, E.FLOWER);
+      return;
+    }
     put(i, E.LEAF, sp === SP.PINE ? 0 : canopy + (branch ? 0 : 1), sp);
     if (sp === SP.PINE) v[i] = 1; // pine tip
     return;
@@ -692,6 +761,7 @@ function growTree(i) {
   if (tt === 0 || tt === E.LEAF || tt === E.PLANT || tt === E.FLOWER || tt === E.SMOKE || tt === E.STEAM) {
     t[ti] = E.SAPLING; d[ti] = d[i] - 1; a[ti] = aux; v[ti] = v[i]; s[ti] = F;
     t[i] = E.WOOD; d[i] = 0; a[i] = sp | (branch ? 8 : 0); s[i] = F;
+    wake(ti);
     const left = init - d[ti];
     if (sp === SP.PINE && left >= 2) {
       const wid = Math.max(1, Math.round(d[ti] * 0.42 + 0.3 + ((left & 1) ? 0.6 : 0)));
@@ -700,7 +770,14 @@ function growTree(i) {
         if (t[i + dx] === 0) put(i + dx, E.LEAF, 0, sp);
       }
     }
-    if (!branch && sp !== SP.PINE && sp !== SP.PALM && d[ti] > 1 && d[ti] < init * 0.6 && R() < 0.3) {
+    if (sp === SP.CACTUS && !branch && left >= 2 && d[ti] >= 1 && R() < 0.45) {
+      // a cactus arm: out one cell, then straight up
+      const bd = R() < 0.5 ? -1 : 1;
+      if (t[i + bd] === 0 && t[i + 2 * bd] === 0 && t[i + 2 * bd - w] === 0) {
+        put(i + bd, E.WOOD, 0, sp | 8);
+        put(i + 2 * bd, E.SAPLING, 1 + ((R() * 2) | 0), sp | 8 | (1 << 4) | (2 << 6));
+      }
+    } else if (!branch && sp !== SP.PINE && sp !== SP.PALM && sp !== SP.CACTUS && d[ti] > 1 && d[ti] < init * (sp === SP.JUNGLE ? 0.75 : 0.6) && R() < (sp === SP.JUNGLE ? 0.45 : 0.3)) {
       const bd = R() < 0.5 ? -1 : 1;
       const bi = i - w + bd;
       if (t[bi] === 0) {
@@ -714,7 +791,7 @@ function growTree(i) {
 }
 
 function palmCrown(i) {
-  t[i] = E.WOOD; a[i] = SP.PALM; s[i] = F;
+  t[i] = E.WOOD; a[i] = SP.PALM; s[i] = F; wake(i);
   const fronds = [[-1, -1], [1, -1], [-2, 0], [2, 0], [-3, 1], [3, 1], [0, -1], [-2, -1], [2, -1]];
   for (const [dx, dy] of fronds) {
     const j = i + dx + dy * w;
@@ -739,7 +816,7 @@ function woodNear(x, y) {
 
 function regrowLeaf(i, x, y) {
   const sp = a[i] & 7;
-  if (sp === SP.PALM) return;
+  if (sp === SP.PALM || sp === SP.CACTUS) return;
   for (let k = 1; k <= 3; k++) {
     const b = t[i + k * w];
     if (b === E.DIRT || b === E.GRASS || b === E.STONE || b === E.SAND) return;

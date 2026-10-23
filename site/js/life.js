@@ -2,7 +2,7 @@
 import { G, emit, on } from './state.js';
 import { E, STAND, PASS, DEADLY, MAT, KIND, K, SP } from './elements.js';
 import { makeName, pick, hash2 } from './util.js';
-import { putCell, plantTree } from './sim.js';
+import { putCell, plantTree, wakeRect, speciesFor } from './sim.js';
 import { spawnFx, floatText } from './fx.js';
 import { gi } from './glyphs.js';
 import { DAY } from './weather.js';
@@ -220,6 +220,7 @@ export function placeBuilding(kind, x0, bottomY) {
   const bh = B.rows.length, bw = B.rows[0].length;
   const id = T.nextB++;
   let cells = 0;
+  wakeRect(x0 - 1, bottomY - bh - 1, x0 + bw, bottomY + 5);
   // level the ground: clear the footprint, then lay foundations
   let timber = 0;
   for (let c = 0; c < bw; c++) {
@@ -310,6 +311,7 @@ export function demolish(b) {
       const i = y * w.w + x;
       if ((w.t[i] === E.STRUCT || w.t[i] === E.CROP || w.t[i] === E.TORCH) && w.a[i] === b.id) {
         w.t[i] = E.EMPTY; w.a[i] = 0; w.d[i] = 0;
+        if (w.wake) w.wake(i);
         if (Math.random() < 0.3) spawnFx({ x, y, vx: (Math.random() - 0.5) * 0.4, vy: -0.15, g: 0.03, life: 40, glyph: '▪', color: [200, 180, 150] });
       }
     }
@@ -347,7 +349,7 @@ const P = {
     if (tt === E.CROP) return w.d[i] >= 210;
     if (tt === E.LEAF && (G.env.season === 1 || G.env.season === 2)) {
       const sp = w.a[i] & 7;
-      return (sp === SP.OAK || sp === SP.CHERRY || sp === SP.PALM) && hash2(i, G.env.day, 2) < 0.25;
+      return (sp === SP.OAK || sp === SP.CHERRY || sp === SP.PALM || sp === SP.JUNGLE) && hash2(i, G.env.day, 2) < 0.25;
     }
     return false;
   },
@@ -1017,6 +1019,7 @@ function nextBuilding(T, pop, cap) {
 
 // ── wild ecosystem ─────────────────────────────────────────────────────────
 export function updateEcology() {
+  const sc = G.world ? G.world.w / 400 : 1; // populations scale with the width of the world
   const w = W();
   const env = G.env;
   if (w.tick % 90 !== 0) return;
@@ -1025,20 +1028,20 @@ export function updateEcology() {
   const R = Math.random;
   const rx = () => 4 + ((R() * (w.w - 8)) | 0);
   // birds
-  if (!env.night && n[E.BIRD] < 14 && R() < 0.4) {
+  if (!env.night && n[E.BIRD] < 14 * sc && R() < 0.4) {
     const x = rx(), y = Math.max(4, w.surf[x] - 8 - ((R() * 12) | 0));
     const i = y * w.w + x;
     if (t[i] === E.EMPTY) putCell(i, E.BIRD, 0, R() < 0.5 ? 1 : 0);
   }
   // butterflies near flowers
-  if (!env.night && (env.season === 0 || env.season === 1) && n[E.BUTTERFLY] < 14) {
+  if (!env.night && (env.season === 0 || env.season === 1) && n[E.BUTTERFLY] < 14 * sc) {
     for (let k = 0; k < 6; k++) {
       const x = rx(), y = w.surf[x] - 1;
       if (t[y * w.w + x] === E.FLOWER && t[(y - 2) * w.w + x] === E.EMPTY) { putCell((y - 2) * w.w + x, E.BUTTERFLY); break; }
     }
   }
   // fireflies on warm nights
-  if (env.night && env.season !== 3 && n[E.FIREFLY] < 45) {
+  if (env.night && env.season !== 3 && n[E.FIREFLY] < 45 * sc) {
     for (let k = 0; k < 4; k++) {
       const x = rx(), y = w.surf[x] - 2 - ((R() * 4) | 0);
       const g = t[w.surf[x] * w.w + x];
@@ -1046,7 +1049,7 @@ export function updateEcology() {
     }
   }
   // fish repopulate slowly
-  if (n[E.FISH] < Math.min(60, n[E.WATER] / 160) && R() < 0.3) {
+  if (n[E.FISH] < Math.min(60 * sc, n[E.WATER] / 160) && R() < 0.3) {
     for (let k = 0; k < 30; k++) {
       const x = rx(), y = w.surf[x] + 3 + ((R() * 12) | 0);
       if (y >= w.h - 2) continue;
@@ -1055,7 +1058,7 @@ export function updateEcology() {
     }
   }
   // worms
-  if (n[E.WORM] < 25 && R() < 0.2) {
+  if (n[E.WORM] < 25 * sc && R() < 0.2) {
     const x = rx(), y = w.surf[x] + 2 + ((R() * 4) | 0);
     const i = y * w.w + x;
     if (t[i] === E.DIRT) putCell(i, E.WORM);
@@ -1064,10 +1067,10 @@ export function updateEcology() {
   if (env.season < 2 && R() < 0.15) {
     const x = rx(), y = w.surf[x];
     const i = y * w.w + x;
-    if (t[i] === E.GRASS && t[i - w.w] === E.EMPTY && n[E.WOOD] < 1400) {
+    if (t[i] === E.GRASS && t[i - w.w] === E.EMPTY && n[E.WOOD] < 1400 * sc) {
       let near = false;
       for (let dx = -4; dx <= 4 && !near; dx++) for (let dy = -10; dy < 0; dy++) if (t[(y + dy) * w.w + x + dx] === E.WOOD || t[(y + dy) * w.w + x + dx] === E.STRUCT) { near = true; break; }
-      if (!near && R() < 0.3) plantTree(i - w.w, w.biome[x] === 2 ? SP.PINE : pick([SP.OAK, SP.OAK, SP.BIRCH, SP.CHERRY]));
+      if (!near && R() < 0.3) plantTree(i - w.w, speciesFor(x, y, w.t[i]));
     }
   }
 }

@@ -132,10 +132,11 @@ export function updateClouds() {
         if (t[i] !== E.CLOUD) continue;
         const j = i + dir;
         const tj = t[j];
-        if (x + dir <= 0 || x + dir >= w - 1) { t[i] = 0; continue; }
+        if (x + dir <= 0 || x + dir >= w - 1) { t[i] = 0; if (W.wake) W.wake(i); continue; }
         if (tj === 0) {
           t[j] = E.CLOUD; d[j] = d[i]; a[j] = a[i]; v[j] = v[i];
           t[i] = 0; d[i] = 0; a[i] = 0;
+          if (W.wake) { W.wake(i); W.wake(j); }
         }
       }
     }
