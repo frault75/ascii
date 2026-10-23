@@ -2,6 +2,7 @@
 import { G, emit } from './state.js';
 import { buildLUTs, E } from './elements.js';
 import { Renderer, buildAtlas } from './renderer.js';
+import { buildSprites } from './sprites.js';
 import { step } from './sim.js';
 import { createEnv, updateEnv, updateClouds } from './weather.js';
 import { initCompose, compose } from './compose.js';
@@ -75,6 +76,7 @@ async function boot() {
   }
   G.renderer = R;
   R.setAtlas(buildAtlas());
+  R.setSprites(buildSprites());
   createEnv();
   G.audio = new Sound();
   wireEvents();

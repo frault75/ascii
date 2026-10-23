@@ -15,6 +15,7 @@ import { toast, logLine, banner, hint, UI, refreshTools, togglePanel, showTransm
 import { welcomeBack } from './voices.js';
 import { IN } from './input.js';
 import { fmt } from './util.js';
+import { F, ANCHOR, HEAD, EXPR, PROP, PROP_PAL, PIV_BODY, PIV_HEAD, PIV_PROP, lookOf } from './sprites.js';
 
 // ── new / load ─────────────────────────────────────────────────────────────
 export function newGame(mode, onProgress) {
@@ -32,7 +33,7 @@ export function newGame(mode, onProgress) {
   if (mode === 'sandbox') G.progress.faith = 0;
   const x = findSpawnSite();
   foundTribe(x);
-  G.cam.zoom = window.innerWidth < 760 ? 1.05 : 1.6;
+  G.cam.zoom = window.innerWidth < 760 ? 1.25 : 1.6;
   G.cam.x = x - window.innerWidth / (10 * G.cam.zoom) / 2;
   G.cam.y = W.surf[x] - window.innerHeight / (16 * G.cam.zoom) * 0.62;
   G.view.camY0 = W.sea - 38;
@@ -213,29 +214,90 @@ export function updateHints(dt) {
 }
 
 // ── overlays drawn on top of the world each frame ─────────────────────────
-const CARRY = { wood: ['≡', [190, 140, 80]], food: ['♣', [140, 230, 120]], stone: ['▪', [190, 190, 200]], metal: ['◆', [140, 230, 255]] };
-const GL = {
-  face: gi('☺'), old: gi('☻'), kid: gi('ö'), z: gi('z'), mark: gi('▼'),
-  stand: gi('Λ'), stride: gi('λ'), arms: gi('Ж'), robe: gi('Π'), lie: gi('▬'),
-};
-const SKIN0 = [241, 194, 125];
+const GL = { mark: gi('▼') };
 
-// write one villager cell: glyph over a darkened backdrop so it pops
-function vcell(view, x, y, glyph, c, glow) {
+// ── villagers as little drawn people ───────────────────────────────────────
+const RS = new Map(); // id → smoothed position, walk phase, cached look
+let lastDraw = 0;
+const pick = (list, t) => list[((Math.floor(t) % list.length) + list.length) % list.length];
+
+function drawVillager(v, view, time, dt, W, hovered, followed) {
   const R = G.renderer;
-  const vx = x - view.ox, vy = y - view.oy;
-  if (vx < 0 || vy < 0 || vx >= R.cols || vy >= R.rows) return;
-  const o = (vy * R.cols + vx) * 4;
-  const { fg, bg, em } = R;
-  fg[o] = c[0]; fg[o + 1] = c[1]; fg[o + 2] = c[2]; fg[o + 3] = glyph;
-  bg[o + 3] = (bg[o + 3] & 15) | (11 << 4);
-  bg[o] *= 0.45; bg[o + 1] *= 0.45; bg[o + 2] *= 0.5;
-  if (glow) { em[o] = Math.min(255, em[o] + c[0] * glow); em[o + 1] = Math.min(255, em[o + 1] + c[1] * glow); em[o + 2] = Math.min(255, em[o + 2] + c[2] * glow); }
-}
-function openCell(W, x, y) {
-  if (y < 1) return false;
-  const tt = W.t[y * W.w + x];
-  return tt === E.EMPTY || tt === E.STRUCT || tt === E.LEAF || tt === E.PLANT || tt === E.FLOWER || tt === E.WOOD || tt === E.SMOKE || tt === E.STEAM || tt === E.SNOW || tt === E.TORCH || tt === E.CROP;
+  const T = G.tribe;
+  let s = RS.get(v.id);
+  const tx = v.x + 0.5, ty = v.y + 1;
+  if (!s) { s = { x: tx, y: ty, ph: (v.id * 1.7) % 6, lx: v.x, ly: v.y, mt: 0, look: null, key: '' }; RS.set(v.id, s); }
+  if (Math.abs(tx - s.x) > 3 || Math.abs(ty - s.y) > 3) { s.x = tx; s.y = ty; }
+  const k = 1 - Math.exp(-dt * 16);
+  const px0 = s.x;
+  s.x += (tx - s.x) * k;
+  s.y += (ty - s.y) * k;
+  if (v.x !== s.lx || v.y !== s.ly) { s.mt = 0.3; s.lx = v.x; s.ly = v.y; }
+  s.mt -= dt;
+  s.ph += Math.abs(s.x - px0) * 3;
+  const key = T.era + (v.age >= 10 ? 'o' : '') + (v.kid ? 'k' : '') + v.color;
+  if (s.key !== key) { s.look = lookOf(v, T.era); s.key = key; }
+  const look = s.look;
+
+  const u = (view.cellW / 10) * (v.kid ? 0.7 : 1.15);
+  let px = (s.x - view.ox) * view.cellW - view.offX;
+  let py = (s.y - view.oy) * view.cellH - view.offY;
+  if (px < -40 * u || px > R.W + 40 * u || py < -10 * u || py > R.H + 50 * u) return;
+
+  const here = W.t[v.y * W.w + v.x];
+  const swimming = here === E.WATER || here === E.OIL || here === E.FISH;
+  const work = v.state === 'work' ? v.action : null;
+  const elder = v.age >= 10 && !v.kid;
+  const talking = v.sayT > 0 && v.say;
+  const calling = G.voices && G.voices.shown && G.voices.shown.v === v;
+  const sw = time * 6 + v.id * 0.37;
+  const dir = v.dir < 0 ? -1 : 1;
+  let body, rot = 0;
+  if (swimming) {
+    body = pick(F.swim, time * 3 + v.id);
+    py = (s.y - 1 - view.oy) * view.cellH - view.offY + (13.8 + Math.sin(time * 3 + v.id) * 0.5) * u + view.cellH * 0.15;
+  } else if (v.fall > 1) body = F.fall[0];
+  else if (v.climb > 0) body = pick(F.climb, s.y * 2.5);
+  else if (work === 'sleep') {
+    body = F.lie[0];
+    rot = (-Math.PI / 2) * dir;
+    px += 13 * u * dir;
+    py -= 4.3 * u;
+  } else if (work === 'chop') body = pick(F.axe, sw);
+  else if (work === 'mine') body = pick(F.pick, sw);
+  else if (work === 'build') body = pick(F.hammer, sw);
+  else if (work === 'pray') body = pick(F.pray, time * 1.2 + v.id);
+  else if (work === 'fish') body = pick(F.fish, time * 0.8 + v.id);
+  else if (work === 'gather' || work === 'forage') body = pick(F.gather, time * 2.4 + v.id);
+  else if (work === 'rest') body = F.sit[0];
+  else if (s.mt > 0 || v.state === 'flee') body = pick(v.state === 'flee' ? F.run : v.carry ? F.carry : elder ? F.elder : F.walk, s.ph);
+  else if (v.carry) body = F.carryIdle[0];
+  else if (calling || v === hovered) body = pick(F.wave, time * 4 + v.id);
+  else if (talking) body = pick(F.talk, time * 2.5 + v.id);
+  else if (elder) body = F.elderIdle[0];
+  else body = pick(F.idle, time * 0.8 + v.id * 0.5);
+
+  const an = ANCHOR[body];
+  const front = an.view === 'front';
+  const blink = (time * 0.9 + v.id * 1.7) % 4.2 < 0.13;
+  const mouth = (talking || calling) && Math.floor(time * 8 + v.id) % 2 === 0;
+  const shut = work === 'sleep' || work === 'pray' || blink;
+  const ex = (front ? 3 : 0) + (shut ? 2 : mouth ? 1 : 0);
+  const floor = followed || v === hovered ? 0.8 : T.era >= 3 && G.env.night ? 0.62 : 0.5;
+  const pal = look.pal;
+  const cs = Math.cos(rot), sn = Math.sin(rot);
+  const place = (dx, dy) => [px + dx * cs - dy * sn, py + dx * sn + dy * cs];
+
+  R.sprite(px, py, PIV_BODY[0], PIV_BODY[1], u * dir, u, rot, body, floor, 1, pal);
+  const hu = u * (v.kid ? 1.3 : 1);
+  const [hx, hy] = place((an.x - PIV_BODY[0]) * u * dir, (an.y - PIV_BODY[1]) * u);
+  const hr = rot + (an.tilt || 0) * dir;
+  R.sprite(hx, hy, PIV_HEAD[0], PIV_HEAD[1], hu * dir, hu, hr, HEAD[look.style][ex], floor, 1, pal);
+  if (v.carry && PROP[v.carry] !== undefined && !swimming && work !== 'sleep') {
+    const lift = 10.6 * hu;
+    R.sprite(hx + Math.sin(hr) * lift, hy - Math.cos(hr) * lift, PIV_PROP[0], PIV_PROP[1], u * (v.kid ? 1.1 : 1), u * (v.kid ? 1.1 : 1), hr * 0.5, PROP[v.carry], floor, 1, PROP_PAL[v.carry]);
+  }
+  return Math.round(s.x - 0.5);
 }
 
 export function drawOverlays(view, time) {
@@ -258,55 +320,35 @@ export function drawOverlays(view, time) {
       if (d < bd) { bd = d; hovered = v; }
     }
   }
-  // villagers: a head and a body, kids are a single head
+  // villagers: drawn sprites; names, speech and the follow marker stay text
+  const dt = Math.min(0.1, Math.max(0, time - (lastDraw || time)));
+  lastDraw = time;
+  if (RS.size > T.villagers.length + 24) {
+    const alive = new Set(T.villagers.map((v) => v.id));
+    for (const id of RS.keys()) if (!alive.has(id)) RS.delete(id);
+  }
   for (const v of T.villagers) {
     if (v.inside) continue;
-    if (v.x < view.ox - 1 || v.x > view.ox + view.cols || v.y < view.oy - 1 || v.y > view.oy + view.rows + 1) continue;
-    const skin = v.skin || SKIN0;
-    const here = W.t[v.y * W.w + v.x];
-    const swimming = here === E.WATER || here === E.OIL;
-    const work = v.state === 'work' ? v.action : null;
-    const night = T.era >= 3 && G.env.night ? 0.35 : 0;
-    let top = v.y;
-    if (v.kid) {
-      vcell(view, v.x, v.y, GL.kid, v.color, 0.12 + night);
-    } else if (swimming) {
-      vcell(view, v.x, v.y, GL.face, skin, 0.1);
-    } else if (work === 'sleep') {
-      vcell(view, v.x, v.y, GL.lie, v.color, 0.1);
-      if (openCell(W, v.x, v.y - 1)) { vcell(view, v.x, v.y - 1, GL.z, [190, 200, 255], 0.2); top = v.y - 1; }
-    } else {
-      let body = GL.stand;
-      if (work === 'pray') body = GL.robe;
-      else if (work === 'chop' || work === 'mine' || work === 'build') body = Math.floor(time * 5 + v.id) % 2 ? GL.arms : GL.stand;
-      else if (v.fall > 1 || v.climb > 0) body = GL.arms;
-      else if (v.state === 'walk' || v.state === 'flee') body = (v.x & 1) ? GL.stride : GL.stand;
-      vcell(view, v.x, v.y, body, v.color, 0.1 + night);
-      if (openCell(W, v.x, v.y - 1)) {
-        vcell(view, v.x, v.y - 1, v.age >= 10 ? GL.old : GL.face, skin, 0.08 + night * 0.5);
-        top = v.y - 1;
-      }
-    }
-    let lane = top - 1;
-    if (v.carry) {
-      const [g, c] = CARRY[v.carry];
-      if (openCell(W, v.x, lane)) overlayGlyph(view, v.x, lane, gi(g), c[0], c[1], c[2], 0, true, 0x9f);
-      lane--;
-    }
+    if (v.x < view.ox - 3 || v.x > view.ox + view.cols + 3 || v.y < view.oy - 2 || v.y > view.oy + view.rows + 3) continue;
+    const followed = G.cam.follow === v.id;
+    const cx = drawVillager(v, view, time, dt, W, hovered, followed);
+    if (cx === undefined) continue;
+    const lying = v.state === 'work' && v.action === 'sleep';
+    let lane = (v.kid || lying ? v.y : v.y - 1) - 1;
+    if (v.carry && !lying) lane--;
     if (v.sayT > 0 && v.say) {
       const f = Math.min(1, v.sayT / 30);
-      overlayText(view, v.x, lane, v.say, 240 * f, 240 * f, 255 * f, 0.15);
+      overlayText(view, cx, lane, v.say, 240 * f, 240 * f, 255 * f, 0.15);
       lane--;
     }
-    const followed = G.cam.follow === v.id;
     if (followed || v === hovered) {
       const c = v.color;
-      overlayText(view, v.x, lane, v.name, c[0], c[1], c[2], 0.25);
+      overlayText(view, cx, lane, v.name, c[0], c[1], c[2], 0.25);
       lane--;
     }
     if (followed) {
       const b = 0.6 + 0.4 * Math.sin(time * 6);
-      overlayGlyph(view, v.x, lane, GL.mark, 255 * b, 207 * b, 90 * b, 0.6, true, 0xff);
+      overlayGlyph(view, cx, lane, GL.mark, 255 * b, 207 * b, 90 * b, 0.6, true, 0xff);
     }
   }
   // rocket in flight
@@ -408,12 +450,22 @@ function drawRocket(view, time) {
 // ── export ────────────────────────────────────────────────────────────────
 function exportTxt() {
   const R = G.renderer;
-  let s = '';
+  const view = G.view;
+  const grid = [];
   for (let y = 0; y < R.rows - 1; y++) {
-    let line = '';
-    for (let x = 0; x < R.cols - 1; x++) line += CHARSET[R.fg[(y * R.cols + x) * 4 + 3]] || ' ';
-    s += line.replace(/\s+$/, '') + '\n';
+    const line = [];
+    for (let x = 0; x < R.cols - 1; x++) line.push(CHARSET[R.fg[(y * R.cols + x) * 4 + 3]] || ' ');
+    grid.push(line);
   }
+  // the villagers are sprites on screen: write them back as text
+  const put = (x, y, ch) => { if (grid[y] && x >= 0 && x < grid[y].length) grid[y][x] = ch; };
+  for (const v of G.tribe.villagers) {
+    if (v.inside) continue;
+    const x = v.x - view.ox, y = v.y - view.oy;
+    if (v.kid) put(x, y, 'ö');
+    else { put(x, y, 'Λ'); put(x, y - 1, '☺'); }
+  }
+  let s = grid.map((l) => l.join('').replace(/\s+$/, '')).join('\n') + '\n';
   s = `GENESIS.TXT — ${t('day')} ${G.env.day + 1}\n\n` + s;
   try { navigator.clipboard.writeText(s); toast('info', '', t('copied')); } catch (e) { /* ignore */ }
   download(new Blob([s], { type: 'text/plain;charset=utf-8' }), `genesis-day${G.env.day + 1}.txt`);

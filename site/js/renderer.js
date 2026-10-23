@@ -1,5 +1,6 @@
 // ─── renderer.js ── WebGL2: glyph atlas → lit cells → bloom → CRT ──────────
 import { CHARSET, PROCEDURAL } from './glyphs.js';
+import { FW, FH, INK } from './sprites.js';
 
 const GW = 40, GH = 64, PAD = 4, CW = GW + PAD * 2, CH = GH + PAD * 2;
 export const FONT_STACK = '"JetBrains Mono", "DejaVu Sans Mono", "Cascadia Mono", Menlo, Consolas, "Liberation Mono", monospace';
@@ -202,6 +203,67 @@ void main(){
   oGlow = vec4((cf * a + cb * 0.3 * (1.0 - a)) * glow, 1.0);
 }`;
 
+// sprites: instanced quads, palette-masked frames lit like the cells
+const VS_SPR = `#version 300 es
+layout(location = 0) in vec2 aPos;
+layout(location = 1) in vec2 aPiv;
+layout(location = 2) in vec2 aScl;
+layout(location = 3) in vec4 aMisc;
+layout(location = 4) in vec3 aC0;
+layout(location = 5) in vec3 aC1;
+layout(location = 6) in vec3 aC2;
+layout(location = 7) in vec3 aC3;
+layout(location = 8) in vec3 aC4;
+layout(location = 9) in vec3 aC5;
+uniform vec2 uRes, uSheet;
+out vec2 vUv;
+flat out vec3 vC0, vC1, vC2, vC3, vC4, vC5;
+flat out vec2 vFA;
+const vec2 FSZ = vec2(${FW}.0, ${FH}.0);
+void main(){
+  vec2 c = vec2(float(gl_VertexID & 1), float(gl_VertexID >> 1));
+  vec2 l = (c * FSZ - aPiv) * aScl;
+  float cs = cos(aMisc.x), sn = sin(aMisc.x);
+  vec2 p = aPos + vec2(l.x * cs - l.y * sn, l.x * sn + l.y * cs);
+  gl_Position = vec4(p.x / uRes.x * 2.0 - 1.0, 1.0 - p.y / uRes.y * 2.0, 0.0, 1.0);
+  float f = aMisc.y;
+  vUv = (vec2(mod(f, uSheet.x), floor(f / uSheet.x)) + c) / uSheet;
+  vC0 = aC0; vC1 = aC1; vC2 = aC2; vC3 = aC3; vC4 = aC4; vC5 = aC5;
+  vFA = aMisc.zw;
+}`;
+
+const FS_SPR = `#version 300 es
+precision highp float;
+uniform sampler2D uA, uB, uLN, uLW;
+uniform vec2 uGrid, uCell, uOff, uRes;
+uniform vec3 uAmb;
+uniform float uSkyGain, uNGain, uWGain, uMinLight;
+in vec2 vUv;
+flat in vec3 vC0, vC1, vC2, vC3, vC4, vC5;
+flat in vec2 vFA;
+layout(location = 0) out vec4 oColor;
+layout(location = 1) out vec4 oGlow;
+const vec3 INK = vec3(${INK[0]}.0, ${INK[1]}.0, ${INK[2]}.0) / 255.0;
+void main(){
+  vec4 a = texture(uA, vUv);
+  vec4 b = texture(uB, vUv);
+  if (a.a < 0.003) discard;
+  float ink = max(a.a - a.r - a.g - a.b - b.r - b.g - b.b, 0.0);
+  vec3 col = vC0 * a.r + vC1 * a.g + vC2 * a.b + vC3 * b.r + vC4 * b.g + vC5 * b.b + INK * ink;
+  vec2 p = vec2(gl_FragCoord.x, uRes.y - gl_FragCoord.y) + uOff;
+  vec2 luv = p / uCell / uGrid;
+  vec4 LN = texture(uLN, luv);
+  vec4 LW = texture(uLW, luv);
+  vec3 lit = vec3(uMinLight) + uAmb * (LW.a * 0.8 + LN.a * 0.2) * uSkyGain + LN.rgb * uNGain + LW.rgb * uWGain;
+  lit = lit / (1.0 + max(lit - 1.0, 0.0) * 0.55);
+  lit = max(lit, vec3(vFA.x));
+  float al = a.a * vFA.y;
+  oColor = vec4(col * lit * vFA.y, al);
+  oGlow = vec4(0.0, 0.0, 0.0, al);
+}`;
+
+const SPR_MAX = 2048, SPR_STRIDE = 64;
+
 const FS_FINAL = `#version 300 es
 precision highp float;
 uniform sampler2D uScene, uB1, uB2;
@@ -248,9 +310,9 @@ function compile(gl, type, src) {
   if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s) + '\n' + src);
   return s;
 }
-function program(gl, fs) {
+function program(gl, fs, vs = VS) {
   const p = gl.createProgram();
-  gl.attachShader(p, compile(gl, gl.VERTEX_SHADER, VS));
+  gl.attachShader(p, compile(gl, gl.VERTEX_SHADER, vs));
   gl.attachShader(p, compile(gl, gl.FRAGMENT_SHADER, fs));
   gl.linkProgram(p);
   if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
@@ -275,6 +337,27 @@ export class Renderer {
     this.pScene = program(gl, FS_SCENE);
     this.pFinal = program(gl, FS_FINAL);
     this.vao = gl.createVertexArray();
+    this.pSpr = program(gl, FS_SPR, VS_SPR);
+    this.sprBuf = new ArrayBuffer(SPR_MAX * SPR_STRIDE);
+    this.sprF = new Float32Array(this.sprBuf);
+    this.sprU = new Uint8Array(this.sprBuf);
+    this.sprN = 0;
+    this.sVao = gl.createVertexArray();
+    gl.bindVertexArray(this.sVao);
+    this.sVbo = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.sVbo);
+    gl.bufferData(gl.ARRAY_BUFFER, this.sprBuf.byteLength, gl.DYNAMIC_DRAW);
+    const attr = (loc, n, type, norm, off) => {
+      gl.enableVertexAttribArray(loc);
+      gl.vertexAttribPointer(loc, n, type, norm, SPR_STRIDE, off);
+      gl.vertexAttribDivisor(loc, 1);
+    };
+    attr(0, 2, gl.FLOAT, false, 0);
+    attr(1, 2, gl.FLOAT, false, 8);
+    attr(2, 2, gl.FLOAT, false, 16);
+    attr(3, 4, gl.FLOAT, false, 24);
+    for (let k = 0; k < 6; k++) attr(4 + k, 3, gl.UNSIGNED_BYTE, true, 40 + k * 4);
+    gl.bindVertexArray(null);
     this.cols = 0;
     this.rows = 0;
     this.W = 0;
@@ -296,6 +379,41 @@ export class Renderer {
     const aniso = gl.getExtension('EXT_texture_filter_anisotropic');
     if (aniso) gl.texParameterf(gl.TEXTURE_2D, aniso.TEXTURE_MAX_ANISOTROPY_EXT, 4);
     this.atlas = tex;
+  }
+
+  setSprites(sheet) {
+    const gl = this.gl;
+    const up = (cv) => {
+      const tex = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, tex);
+      gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, cv);
+      gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+      gl.generateMipmap(gl.TEXTURE_2D);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      return tex;
+    };
+    this.sprA = up(sheet.A);
+    this.sprB = up(sheet.B);
+    this.sheet = [sheet.cols, sheet.rows];
+  }
+
+  // queue one sprite: x,y = pivot on screen (px), piv = pivot in frame units,
+  // sx,sy = px per unit (negative sx mirrors), floor = minimum light
+  sprite(x, y, pivX, pivY, sx, sy, rot, frame, floor, alpha, pal) {
+    if (this.sprN >= SPR_MAX) return;
+    const f = this.sprF, u = this.sprU, o = this.sprN * (SPR_STRIDE / 4);
+    f[o] = x; f[o + 1] = y; f[o + 2] = pivX; f[o + 3] = pivY;
+    f[o + 4] = sx; f[o + 5] = sy; f[o + 6] = rot; f[o + 7] = frame; f[o + 8] = floor; f[o + 9] = alpha;
+    const b = this.sprN * SPR_STRIDE + 40;
+    for (let k = 0; k < 6; k++) {
+      const c = pal[k];
+      u[b + k * 4] = c[0]; u[b + k * 4 + 1] = c[1]; u[b + k * 4 + 2] = c[2];
+    }
+    this.sprN++;
   }
 
   tex(w, h, filter, fmt = 'rgba8') {
@@ -436,6 +554,40 @@ export class Renderer {
     gl.uniform1f(S.u.uMinLight, o.minLight);
     gl.uniform1f(S.u.uSat, o.sat ?? 1);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+    // sprites on top, lit by the same light maps
+    if (this.sprN && this.sprA) {
+      const P = this.pSpr;
+      gl.useProgram(P.p);
+      gl.bindVertexArray(this.sVao);
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.sVbo);
+      gl.bufferSubData(gl.ARRAY_BUFFER, 0, this.sprU, 0, this.sprN * SPR_STRIDE);
+      const sb = (unit, tx, name) => {
+        gl.activeTexture(gl.TEXTURE0 + unit);
+        gl.bindTexture(gl.TEXTURE_2D, tx);
+        gl.uniform1i(P.u[name], unit);
+      };
+      sb(0, this.sprA, 'uA');
+      sb(1, this.sprB, 'uB');
+      sb(3, this.tL2.t, 'uLN');
+      sb(4, this.tL3.t, 'uLW');
+      gl.uniform2f(P.u.uRes, this.W, this.H);
+      gl.uniform2f(P.u.uSheet, this.sheet[0], this.sheet[1]);
+      gl.uniform2f(P.u.uGrid, cols, rows);
+      gl.uniform2f(P.u.uCell, o.cellW, o.cellH);
+      gl.uniform2f(P.u.uOff, o.offX, o.offY);
+      gl.uniform3fv(P.u.uAmb, o.amb);
+      gl.uniform1f(P.u.uSkyGain, o.skyGain);
+      gl.uniform1f(P.u.uNGain, o.nGain);
+      gl.uniform1f(P.u.uWGain, o.wGain);
+      gl.uniform1f(P.u.uMinLight, o.minLight);
+      gl.enable(gl.BLEND);
+      gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+      gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, this.sprN);
+      gl.disable(gl.BLEND);
+      gl.bindVertexArray(this.vao);
+    }
+    this.sprN = 0;
 
     // bloom
     const w2 = this.tB1.w, h2 = this.tB1.h, w4 = this.tB3.w, h4 = this.tB3.h;

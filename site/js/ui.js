@@ -7,6 +7,7 @@ import { ERAS, BUILDINGS, capacity, countB } from './life.js';
 import { miracle } from './powers.js';
 import { acceptRequest, declineRequest, requestProgress } from './voices.js';
 import { fmt, clamp } from './util.js';
+import { portrait } from './sprites.js';
 import { SEASONS, DAY } from './weather.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -304,7 +305,7 @@ function civHTML() {
   const kinds = {};
   for (const b of T.buildings) kinds[b.kind] = (kinds[b.kind] || 0) + 1;
   const blist = Object.entries(kinds).map(([k, n]) => `<div class="row"><span class="l">${t('b_' + k)}</span><span class="v">×${n}</span></div>`).join('');
-  const vl = T.villagers.slice(0, 80).map((v) => `<div class="vl" data-v="${v.id}"><span class="g" style="color:rgb(${v.color})">${v.kid ? 'o' : '☺'}</span>${v.name}<span class="j">${v.kid ? t('kid') : t('job_' + v.job)} · ${v.age} ${t('days')}</span></div>`).join('');
+  const vl = T.villagers.slice(0, 80).map((v) => `<div class="vl" data-v="${v.id}"><img class="pt" alt="" src="${portrait(v, T.era)}">${v.name}<span class="j">${v.kid ? t('kid') : t('job_' + v.job)} · ${v.age} ${t('days')}</span></div>`).join('');
   let project = '';
   if (T.building && BUILDINGS[T.building]) {
     const cost = BUILDINGS[T.building].cost;
@@ -464,7 +465,8 @@ export function updateHUD(force = false) {
       const w = 18, f = Math.round(clamp(pr.cur / pr.goal, 0, 1) * w);
       const mm = Math.floor(pr.left / 60), ss = Math.floor(pr.left % 60);
       rq.style.display = '';
-      rq.innerHTML = `<div class="ttl"><b>${G.settings.lang === 'fr' ? 'DEMANDE DE' : 'REQUEST FROM'} ${pr.name.toUpperCase()}</b></div><div class="q">« ${pr.text} »</div><div class="pb">[${'█'.repeat(f)}${'░'.repeat(w - f)}] ${Math.min(Math.floor(pr.cur), pr.goal)}/${pr.goal} ${pr.unit} · ${mm}:${String(ss).padStart(2, '0')}</div>`;
+      const asker = T.villagers.find((q) => q.id === pr.vid);
+      rq.innerHTML = `<div class="ttl">${asker ? `<img class="pti" alt="" src="${portrait(asker, T.era)}">` : ''}<b>${G.settings.lang === 'fr' ? 'DEMANDE DE' : 'REQUEST FROM'} ${pr.name.toUpperCase()}</b></div><div class="q">« ${pr.text} »</div><div class="pb">[${'█'.repeat(f)}${'░'.repeat(w - f)}] ${Math.min(Math.floor(pr.cur), pr.goal)}/${pr.goal} ${pr.unit} · ${mm}:${String(ss).padStart(2, '0')}</div>`;
     } else rq.style.display = 'none';
   }
 
@@ -499,7 +501,7 @@ export function cellInfo(x, y) {
   if (!W || x < 0 || y < 0 || x >= W.w || y >= W.h) return '';
   const T = G.tribe;
   const v = T.villagers.find((q) => !q.inside && q.x === x && (q.y === y || (!q.kid && q.y - 1 === y)));
-  if (v) return `<b style="color:rgb(${v.color})">☺ ${v.name}</b> · ${v.kid ? t('kid') : t('job_' + v.job)} · ${t('age')} ${v.age}`;
+  if (v) return `<img class="pti" alt="" src="${portrait(v, T.era)}"><b style="color:rgb(${v.color})">${v.name}</b> · ${v.kid ? t('kid') : t('job_' + v.job)} · ${t('age')} ${v.age}`;
   const tt = W.t[y * W.w + x];
   let extra = '';
   if (tt === E.STRUCT) {
@@ -562,8 +564,9 @@ export function showTransmission(m) {
   const job = v.kid ? t('kid') : v.job && v.job !== 'idle' ? t('job_' + v.job) : '';
   box.style.setProperty('--vc', `rgb(${v.color})`);
   box.innerHTML = `<div class="th"><span class="dot">◉</span> ${fr ? 'TRANSMISSION' : 'TRANSMISSION'} · <b>${v.name.toUpperCase()}</b> <span class="dim">${job}</span><button class="x" data-tx="close">✕</button></div>
+    <div class="tw"><div class="face"><img alt="" src="${portrait(v, G.tribe ? G.tribe.era : 0)}"></div><div class="tc">
     <div class="tb"><span class="pr">&gt;</span> <span class="tt"></span><span class="cur">█</span></div>
-    <div class="tg"></div>
+    <div class="tg"></div></div></div>
     <div class="ta"></div>`;
   box.classList.add('show');
   const tt = box.querySelector('.tt');

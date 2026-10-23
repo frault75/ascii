@@ -258,7 +258,7 @@ export function requestProgress() {
   const a = V.active;
   if (!a) return null;
   const cur = a.req.prog(a.base);
-  return { cur: Math.max(0, cur), goal: a.goal, left: Math.max(0, (a.until - G.world.tick) / 60), name: a.name, unit: a.req.unit[fr() ? 0 : 1][0], text: a.text };
+  return { cur: Math.max(0, cur), goal: a.goal, left: Math.max(0, (a.until - G.world.tick) / 60), name: a.name, vid: a.v, unit: a.req.unit[fr() ? 0 : 1][0], text: a.text };
 }
 
 // ── reactions ──────────────────────────────────────────────────────────────
