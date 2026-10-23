@@ -126,10 +126,10 @@ function streets(W) {
   STREET = new Uint8Array(W.w);
   const lv = T.era >= 4 ? 3 : T.era >= 3 ? 2 : 1;
   // neighbouring buildings are joined by a street; lone ones get a short stretch
-  const segs = T.buildings.filter((b) => b.kind !== 'farm').map((b) => [b.x - 2, b.x + b.w + 1]).sort((p, q) => p[0] - q[0]);
+  const segs = T.buildings.filter((b) => b.kind !== 'farm').map((b) => [b.x - 4, b.x + b.w + 3]).sort((p, q) => p[0] - q[0]);
   let cur = null;
   for (const sg of segs) {
-    if (cur && sg[0] <= cur[1] + 8) cur[1] = Math.max(cur[1], sg[1]);
+    if (cur && sg[0] <= cur[1] + 10) cur[1] = Math.max(cur[1], sg[1]);
     else { if (cur) STREET.fill(lv, Math.max(0, cur[0]), Math.min(W.w, cur[1] + 1)); cur = [...sg]; }
   }
   if (cur) STREET.fill(lv, Math.max(0, cur[0]), Math.min(W.w, cur[1] + 1));
@@ -684,7 +684,7 @@ export function compose(view, time) {
             }
           }
           // the village street
-          if (ti && ST && ST[wx] && (bits & 1) && STREET_ON[tt] && wy === surf[wx]) {
+          if (ti && ST && ST[wx] && ((bits & 1) || t[i - w] === E.STRUCT) && STREET_ON[tt] && wy === surf[wx]) {
             const lv = ST[wx];
             if (lv === 1) { ti = TILE.path; fr = 166; fgc = 128; fb = 84; r2 = 110; g2 = 78; b2 = 48; }
             else if (lv === 2) { ti = TILE.cobble; fr = 170; fgc = 168; fb = 176; r2 = 84; g2 = 82; b2 = 92; }

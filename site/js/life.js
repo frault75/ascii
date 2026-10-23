@@ -202,13 +202,16 @@ export function findSite(kind, cx, radius = 90, ignoreId = 0, rise = 14) {
           if (CLEAR.has(tt) || (ignoreId && tt === E.STRUCT && w.a[yy * w.w + xx] === ignoreId)) continue;
           if (inside && SOFT.has(tt) && yy >= Y - 2) continue;
           if (!inside && yy >= Y - 2 && STAND[tt]) continue;
+          // a rebuilt home may stand wall to wall with its neighbours
+          if (!inside && ignoreId && tt === E.STRUCT) continue;
           ok = false;
         }
       }
       if (!ok) continue;
+      const gap = ignoreId ? 0 : 1;
       for (const b of G.tribe.buildings) {
         if (b.id === ignoreId) continue;
-        if (x0 < b.x + b.w + 1 && x0 + bw + 1 > b.x && top < b.y + b.h + 2 && Y > b.y - 2) { ok = false; break; }
+        if (x0 < b.x + b.w + gap && x0 + bw + gap > b.x && top < b.y + b.h + 2 && Y > b.y - 2) { ok = false; break; }
       }
       // nor on a plot another builder is already heading to
       for (const q of G.tribe.villagers) {
@@ -748,7 +751,8 @@ function finishWork(v) {
         if (old) { demolish(old); emit('upgrade', old.kind, s.kind); dbg('upgrade:' + s.kind); }
         // the ground may have changed a little (a puddle, a clod, a sapling): builders
         // clear and level the footprint themselves, so only another structure stops them
-        const clash = (x0, y0) => T.buildings.some((b) => x0 < b.x + b.w + 1 && x0 + s.bw + 1 > b.x && y0 - s.bh + 1 < b.y + b.h + 2 && y0 + 1 > b.y - 2) || (() => {
+        const gap = s.replace ? 0 : 1;
+        const clash = (x0, y0) => T.buildings.some((b) => x0 < b.x + b.w + gap && x0 + s.bw + gap > b.x && y0 - s.bh + 1 < b.y + b.h + 2 && y0 + 1 > b.y - 2) || (() => {
           for (let y = y0 - s.bh + 1; y <= y0; y++) for (let x = x0; x < x0 + s.bw; x++) if (w.t[y * w.w + x] === E.STRUCT) return true;
           return false;
         })();
@@ -1136,8 +1140,9 @@ function nextBuilding(T, pop, cap) {
   if (e >= 1 && !has('temple') && pop >= 5) list.unshift('temple'); // the first temple comes before anything else
   // a new era rebuilds the dwellings of the old days in its own style
   const home = ERAS[e].house;
-  const renew = pop < cap - 1 && T.buildings.some((b) => TIER[b.kind] && TIER[b.kind] < TIER[home]) && !(T.skip && T.skip.renew > G.env.time);
-  if (renew) list.push('renew');
+  const renew = T.buildings.some((b) => TIER[b.kind] && TIER[b.kind] < TIER[home]) && !(T.skip && T.skip.renew > G.env.time);
+  // (right after the temple; when homes are short, every other project)
+  if (renew && (pop < cap - 1 || Math.random() < 0.5)) list.splice(list[0] === 'temple' || list[0] === 'rocket' ? 1 : 0, 0, 'renew');
   if (e >= 3 && countB('lamp') < Math.floor(T.buildings.length / 3)) list.push('lamp');
   const ok = list.filter((k) => !(T.skip && T.skip[k] > G.env.time));
   if (!ok.length) return null;
