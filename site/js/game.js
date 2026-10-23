@@ -152,13 +152,18 @@ export function wireEvents() {
   on('collapse', (b) => { if (b.kind !== 'farm' && b.kind !== 'lamp') logLine('⌂ ' + t('logCollapse', t('b_' + b.kind)), true, '#ff8a6a'); });
   on('hunger', (n) => { if (n === 1 || n === 3) { logLine(t('logHunger'), true, '#ff8a6a'); hintOnce('hunger', fr() ? 'La tribu a faim : sème des fleurs, crée de l\'eau pour les poissons, ou utilise le miracle ABONDANCE.' : 'The tribe is hungry: sow flowers, add water for fish, or use the ABUNDANCE miracle.'); } });
   on('gold', (v) => { logLine('$ ' + t('logGold', v.name), false, '#ffd84a'); emit('discover', 'gold'); });
-  on('era', (e) => {
+  on('era', (e, gifts) => {
     const name = t('era' + e);
     banner(`${t('eraWord')} ${['0', 'I', 'II', 'III', 'IV', 'V'][e]}`, name, fr() ? 'une nouvelle ère commence' : 'a new era begins');
     logLine('✦ ' + t('logEra', name), true, '#6ff2ff');
     sfx('era');
     G.flash = 0.8; G.flashColor = [1, 0.85, 0.5]; G.glitch = 0.6;
     for (const v of G.tribe.villagers) say(v, '✦', 160);
+    if (gifts && gifts.length) {
+      const names = gifts.map((id) => tr(TOOL[id].n)).join(' · ');
+      setTimeout(() => toast('achieve', fr() ? '✦ NOUVEAUX POUVOIRS ✦' : '✦ NEW POWERS ✦', names, fr() ? 'offerts par cette ère' : 'gifts of this era'), 2600);
+      logLine('✦ ' + names, true, '#ffd27a');
+    }
     refreshTools();
   });
   on('weather', (w) => {

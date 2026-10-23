@@ -2,7 +2,7 @@
 import { G, emit, on } from './state.js';
 import { t, tr } from './i18n.js';
 import { E, LUT_FG, LUT_BG } from './elements.js';
-import { TOOLS, TOOL, CATS, DISCOVERIES, ACHIEVEMENTS, QUESTS, LAUNCH_COST, isUnlocked, unlock, isSandbox, canAdvance, advance, canSpend } from './progress.js';
+import { TOOLS, TOOL, CATS, DISCOVERIES, ACHIEVEMENTS, QUESTS, LAUNCH_COST, ERA_GIFTS, isUnlocked, unlock, isSandbox, canAdvance, advance, canSpend } from './progress.js';
 import { ERAS, BUILDINGS, capacity, countB } from './life.js';
 import { miracle } from './powers.js';
 import { acceptRequest, declineRequest, requestProgress } from './voices.js';
@@ -303,6 +303,7 @@ function civHTML() {
     const reqs = [[pop >= nx.pop, `${nx.pop} ${t('inhabitants')} (${pop})`], [canSpend(nx.faith), `${fmt(nx.faith)} ◊`]];
     if (nx.houses) reqs.push([houses >= nx.houses, `${nx.houses} ${t('houses')} (${houses})`]);
     next = `<h3>${t('nextEra')} — ${t(nx.key)}</h3>` + reqs.map(([ok, s]) => `<div class="req ${ok ? 'ok' : 'no'}">${ok ? '[✓]' : '[ ]'} ${s}</div>`).join('') +
+      (ERA_GIFTS[T.era + 1].length && !isSandbox() ? `<div class="dim" style="margin-top:6px">${G.settings.lang === 'fr' ? 'pouvoirs offerts' : 'powers granted'} : ${ERA_GIFTS[T.era + 1].map((id) => tr(TOOL[id].n)).join(', ')}</div>` : '') +
       `<div style="margin-top:8px"><button class="bt gold ${canAdvance() ? '' : 'off'}" data-act="advance">✦ ${t('reveal')} · ${fmt(nx.faith)} ◊</button></div>`;
   }
   const kinds = {};

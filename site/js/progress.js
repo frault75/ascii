@@ -222,19 +222,36 @@ export function canAdvance() {
   return canSpend(nx.faith);
 }
 
+// each era hands the god a new set of powers
+export const ERA_GIFTS = [
+  [],
+  ['tree', 'flower', 'fish', 'rabbit', 'deer', 'cloud', 'snow'],
+  ['boar', 'bird', 'butterfly', 'worm', 'ice', 'lava', 'oil', 'steam', 'wind', 'snowcloud', 'gift', 'bless', 'rainbow', 'night'],
+  ['firefly', 'shroom', 'metal', 'gunpowder', 'acid', 'storm', 'bolt', 'aurora', 'wolf'],
+  ['tnt', 'meteor', 'gold', 'crystal', 'quake', 'eclipse'],
+  ['volcano', 'meteors', 'glitch'],
+];
+function grantGifts(era) {
+  const got = [];
+  for (const id of ERA_GIFTS[era] || []) if (TOOL[id] && !G.progress.unlocked[id]) { G.progress.unlocked[id] = 1; got.push(id); }
+  return got;
+}
+
 export function advance() {
   const T = G.tribe;
   if (!canAdvance()) return false;
   spend(ERAS[T.era + 1].faith);
   T.era++;
   T.building = null;
-  emit('era', T.era);
+  emit('era', T.era, grantGifts(T.era));
   return true;
 }
 
 // periodic checks (every ~second)
 export function checkProgress() {
   const P = G.progress, T = G.tribe;
+  // (worlds saved before eras gave powers catch up quietly)
+  for (let e = 1; e <= T.era; e++) grantGifts(e);
   for (const a of ACHIEVEMENTS) {
     if (P.ach[a.id]) continue;
     if (a.test(T)) {
