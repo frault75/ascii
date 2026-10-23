@@ -210,6 +210,11 @@ export function findSite(kind, cx, radius = 90, ignoreId = 0, rise = 14) {
         if (b.id === ignoreId) continue;
         if (x0 < b.x + b.w + 1 && x0 + bw + 1 > b.x && top < b.y + b.h + 2 && Y > b.y - 2) { ok = false; break; }
       }
+      // nor on a plot another builder is already heading to
+      for (const q of G.tribe.villagers) {
+        const p = q.site;
+        if (ok && p && x0 < p.x + p.bw + 1 && x0 + bw + 1 > p.x && top < p.y + 2 && Y > p.y - p.bh - 1) ok = false;
+      }
       if (ok) return { x: x0, y: Y - 1, groundY: Y, bw, bh };
     }
   }
@@ -1004,7 +1009,9 @@ function manage() {
   }
 
   // what to build next
-  if (!T.building && !T.villagers.some((v) => v.job === 'build')) T.building = nextBuilding(T, pop, cap);
+  // a big tribe runs several building sites at once
+  const crews = T.villagers.filter((v) => v.job === 'build').length;
+  if (!T.building && crews < Math.min(6, 1 + Math.floor(pop / 12))) T.building = nextBuilding(T, pop, cap);
   const cost = T.building ? BUILDINGS[T.building].cost : {};
 
   // meals
@@ -1034,7 +1041,7 @@ function manage() {
   if (T.wood < woodNeed) want.wood = Math.max(1, Math.ceil(adults.length * 0.25));
   const stoneNeed = (cost.stone || 0) + (T.era >= 2 ? 4 : 0);
   if (T.stone < stoneNeed || (cost.metal && T.metal < cost.metal)) want.stone = Math.max(1, Math.ceil(adults.length * (cost.metal || (cost.stone || 0) > 8 ? 0.4 : 0.25)));
-  if (T.building && afford(cost)) want.build = 1;
+  want.build = T.villagers.filter((v) => v.job === 'build' && v.site).length + (T.building && afford(cost) ? 1 : 0);
   const temple = T.buildings.some((b) => b.kind === 'temple');
   if (temple) want.pray = Math.ceil(adults.length * 0.08);
   const have = { food: 0, wood: 0, stone: 0, build: 0, pray: 0, idle: 0 };
@@ -1114,7 +1121,7 @@ function nextBuilding(T, pop, cap) {
   if (pop >= cap - 1) list.push(ERAS[e].house);
   if (e >= 2 && countB('farm') < Math.ceil(pop / 6)) list.push('farm');
   if (rocketTime) list.unshift('rocket');
-  if (e >= 1 && !has('temple') && pop >= 5) list.push('temple');
+  if (e >= 1 && !has('temple') && pop >= 5) list.unshift('temple'); // the first temple comes before anything else
   if (e >= 3 && countB('lamp') < Math.floor(T.buildings.length / 3)) list.push('lamp');
   const ok = list.filter((k) => !(T.skip && T.skip[k] > G.env.time));
   if (!ok.length) return null;
