@@ -28,8 +28,21 @@ G.view = view;
 let mode = 'intro';
 let intro = null;
 
+// render quality: phones get a lower pixel ratio, and any device that can't
+// hold the frame rate drops its resolution step by step (and recovers)
+const COARSE = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+const Q = { scale: 1, ema: 1 / 60, slow: 0, fast: 0 };
+G.quality = Q;
+function adaptQuality(dt) {
+  if (Q.lock || dt <= 0 || dt > 0.25) return;
+  Q.ema += (dt - Q.ema) * 0.05;
+  if (Q.ema > 1 / 42) { Q.slow += dt; Q.fast = 0; } else if (Q.ema < 1 / 57) { Q.fast += dt; Q.slow = 0; } else { Q.slow = 0; Q.fast = 0; }
+  if (Q.slow > 2 && Q.scale > 0.5) { Q.scale = Math.max(0.5, Q.scale - 0.15); Q.slow = 0; Q.ema = 1 / 50; }
+  if (Q.fast > 6 && Q.scale < 1) { Q.scale = Math.min(1, Q.scale + 0.1); Q.fast = 0; }
+}
+
 function computeView(cellCssW, cellCssH, clampCam = true) {
-  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const dpr = Math.min(COARSE ? 1.75 : 2, window.devicePixelRatio || 1) * Q.scale;
   const Wpx = Math.round(window.innerWidth * dpr), Hpx = Math.round(window.innerHeight * dpr);
   const cellW = cellCssW * dpr, cellH = cellCssH * dpr;
   const visC = Wpx / cellW, visR = Hpx / cellH;
@@ -172,7 +185,7 @@ function frame(now) {
   G.realTime += dt;
   try {
     if (mode === 'intro') introFrame(dt);
-    else gameFrame(dt);
+    else { adaptQuality(dt); gameFrame(dt); }
   } catch (e) {
     console.error(e);
   }
@@ -255,6 +268,7 @@ function gameFrame(dt) {
     flash: G.flash, flashColor: G.flashColor, glitch: G.glitch, scan: 3 * view.dpr,
     sat: 1,
   });
+  if (G.photoReq) { G.photoReq(canvas); G.photoReq = null; }
   G.shake *= Math.pow(0.02, dt);
   G.flash = Math.max(0, G.flash - dt * 1.6);
   G.glitch = Math.max(0, G.glitch - dt * 0.8);

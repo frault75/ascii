@@ -470,9 +470,9 @@ function exportTxt() {
   try { navigator.clipboard.writeText(s); toast('info', '', t('copied')); } catch (e) { /* ignore */ }
   download(new Blob([s], { type: 'text/plain;charset=utf-8' }), `genesis-day${G.env.day + 1}.txt`);
 }
+// the drawing buffer is not preserved: the frame loop grabs it right after rendering
 function photo() {
-  const cv = document.getElementById('gl');
-  cv.toBlob((b) => b && download(b, `genesis-day${G.env.day + 1}.png`));
+  G.photoReq = (cv) => cv.toBlob((b) => b && download(b, `genesis-day${G.env.day + 1}.png`));
 }
 function download(blob, name) {
   const a = document.createElement('a');

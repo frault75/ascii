@@ -480,7 +480,7 @@ function program(gl, fs, vs = VS) {
 export class Renderer {
   constructor(canvas) {
     this.canvas = canvas;
-    const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, preserveDrawingBuffer: true, powerPreference: 'high-performance' });
+    const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, preserveDrawingBuffer: false, powerPreference: 'high-performance' });
     if (!gl) throw new Error('WebGL2 unavailable');
     this.gl = gl;
     this.half = !!gl.getExtension('EXT_color_buffer_float');
