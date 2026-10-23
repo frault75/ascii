@@ -1,7 +1,7 @@
 // ─── main.js ── bootstrap, intro → game, the frame loop ────────────────────
 import { G, emit } from './state.js';
 import { buildLUTs, E } from './elements.js';
-import { Renderer, buildAtlas } from './renderer.js';
+import { Renderer, buildAtlas, buildTileAtlas } from './renderer.js';
 import { buildSprites } from './sprites.js';
 import { step } from './sim.js';
 import { createEnv, updateEnv, updateClouds } from './weather.js';
@@ -77,6 +77,7 @@ async function boot() {
   G.renderer = R;
   R.setAtlas(buildAtlas());
   R.setSprites(buildSprites());
+  R.setTiles(buildTileAtlas());
   createEnv();
   G.audio = new Sound();
   wireEvents();
@@ -181,6 +182,8 @@ function frame(now) {
 function introFrame(dt) {
   const lay = intro.layout();
   computeView(lay.cellW, lay.cellH, false);
+  R.ti.fill(0);
+  R.leaf.fill(0);
   intro.frame(R, view, dt);
   R.render({
     cellW: view.cellW, cellH: view.cellH, offX: 0, offY: 0,
@@ -246,7 +249,7 @@ function gameFrame(dt) {
   const vg = view.counts[E.GLITCH];
   if (vg) G.glitch = Math.max(G.glitch, Math.min(0.55, vg / 500));
   R.render({
-    cellW: view.cellW, cellH: view.cellH, offX: view.offX, offY: view.offY,
+    cellW: view.cellW, cellH: view.cellH, offX: view.offX, offY: view.offY, ox: view.ox, oy: view.oy, sun: G.settings.pixel !== false ? view.sun : null, moon: G.settings.pixel !== false ? view.moon : null, ecl: view.ecl,
     amb: view.amb, skyGain: 3.0, nGain: 14, wGain: 22, minLight: 0.1,
     crt: G.settings.crt, bloom: G.settings.bloom, time: G.realTime,
     flash: G.flash, flashColor: G.flashColor, glitch: G.glitch, scan: 3 * view.dpr,

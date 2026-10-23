@@ -4,12 +4,14 @@ import { E, LUT_G, LUT_FG, LUT_BG, MIX, EMIT, SP, MAT } from './elements.js';
 import { gi, gs } from './glyphs.js';
 import { skyPalette } from './weather.js';
 import { fbm1, hash2, clamp, smooth } from './util.js';
+import { TILE, FX_TILE, fam, RIDGE } from './tiles.js';
 
 const SELF = 15 * 16 + 15; // fg & bg ignore lighting
 const SELF_BG = 15;        // only bg ignores lighting
 
 let R; // renderer buffers
-let FG, BG, EM, cols, rows;
+let FG, BG, EM, TI, LF, cols, rows;
+let PIX = true; // pixel-art tiles (true) or the original glyph look
 const farH = new Float32Array(2048);
 const nearH = new Float32Array(2048);
 let skyRows = null;
@@ -25,6 +27,55 @@ const g = {
   pine: gs('▲^Λ▲'), palm: gs('~╱╲~'), cherry: gs('*✿❀*♣'), leaf: gs('♣♠*&%♣'),
   paren: gs('()'), ghost: gi('†'), smile: gi('☺'), smileB: gi('☻'),
 };
+
+// ── pixel-art tile tables ──────────────────────────────────────────────────
+const TL = {
+  dirt: fam('dirt', 4), stone: fam('stone', 4), bedrock: fam('bedrock', 2), sand: fam('sand', 4), grass: fam('grass', 4),
+  snow: fam('snow', 2), ice: fam('ice', 2), metal: fam('metal', 2), gold: fam('gold', 2), obsidian: fam('obsidian', 2),
+  crystal: fam('crystal', 2), ash: fam('ash', 2), ember: fam('ember', 2), bark: fam('bark', 2), leaf: fam('leaf', 4),
+  pine: fam('pine', 2), frond: fam('frond', 2), wave: fam('wave', 3), rain: fam('rain', 4), lava: fam('lava', 3),
+  lavaTop: fam('lavaTop', 3), flame: fam('flame', 4), puff: fam('puff', 3), cloudMid: fam('cloudMid', 2),
+  cloudLight: fam('cloudLight', 2), glitch: fam('glitch', 4), tuft: fam('tuft', 3), flower: fam('flower', 4),
+  sapling: fam('sapling', 2), crop: fam('crop', 5), shroom: fam('shroom', 2),
+};
+// textured matter: tiles picked by the cell's random byte, rim style
+const TEX = [], RIM = new Uint8Array(64);
+const tex = (e, list, rim = 1) => { TEX[e] = list; RIM[e] = rim; };
+tex(E.DIRT, TL.dirt); tex(E.STONE, TL.stone); tex(E.BEDROCK, TL.bedrock); tex(E.SAND, TL.sand); tex(E.GRASS, TL.grass);
+tex(E.SNOW, TL.snow); tex(E.ICE, TL.ice); tex(E.METAL, TL.metal); tex(E.GOLD, TL.gold); tex(E.OBSIDIAN, TL.obsidian);
+tex(E.CRYSTAL, TL.crystal); tex(E.ASH, TL.ash); tex(E.EMBER, TL.ember); tex(E.GUNPOWDER, [TILE.powder]);
+tex(E.TNT, [TILE.tnt]); tex(E.STARSTONE, [TILE.starstone]); tex(E.GLASS, [TILE.glass], 0);
+// neighbours that leave a side of solid matter exposed
+const OPEN = new Uint8Array(64);
+for (const e of [E.EMPTY, E.SMOKE, E.STEAM, E.FIRE, E.CLOUD, E.BOLT, E.PLANT, E.FLOWER, E.SAPLING, E.CROP, E.SEED, E.BIRD, E.BUTTERFLY, E.FIREFLY, E.TORCH, E.SHROOM, E.LEAF, E.WATER, E.OIL, E.ACID, E.LAVA, E.FISH, E.GLITCH]) OPEN[e] = 1;
+const SLOPED = new Uint8Array(64);
+for (const e of [E.DIRT, E.GRASS, E.SAND, E.SNOW, E.ASH]) SLOPED[e] = 1;
+const G_LR = gi('◢'), G_LL = gi('◣');
+// buildings: wall texture per material, shapes per glyph, partial shapes see the sky
+const STRUCT_TEX = new Uint8Array(16);
+STRUCT_TEX[MAT.WOOD] = TILE.planks; STRUCT_TEX[MAT.DOOR] = TILE.planks; STRUCT_TEX[MAT.STONE] = TILE.blocks;
+STRUCT_TEX[MAT.BRICK] = TILE.bricks; STRUCT_TEX[MAT.ROOF] = TILE.shingles; STRUCT_TEX[MAT.CLOTH] = TILE.weave;
+STRUCT_TEX[MAT.METAL] = TILE.panel; STRUCT_TEX[MAT.HULL] = TILE.panel; STRUCT_TEX[MAT.GOLD] = TILE.panel;
+const WALL = new Uint8Array(256);
+for (const ch of '█▓▒') WALL[gi(ch)] = 1;
+const STRUCT_SHAPE = new Uint8Array(256);
+for (const [ch, name] of [['□', 'window'], ['∩', 'door'], ['▪', 'pane'], ['○', 'roundWin'], ['≡', 'vent'], ['¦', 'fence'], ['│', 'pole'], ['▲', 'spire'], ['✦', 'sparkle'], ['¡', 'torch'], ['ψ', 'crop4']]) STRUCT_SHAPE[gi(ch)] = TILE[name];
+const PARTIAL = new Uint8Array(256);
+for (const ch of '◢◣◤◥▄▀▲╱╲▖▗▘▝') PARTIAL[gi(ch)] = 1;
+const SKY_TILE = new Uint8Array(256);
+SKY_TILE[g.dot] = TILE.dot1; SKY_TILE[g.mid] = TILE.dot1; SKY_TILE[g.plus] = TILE.plus;
+SKY_TILE[g.star] = TILE.sparkleS; SKY_TILE[g.spark] = TILE.sparkle;
+for (const k of g.aur) SKY_TILE[k] = TILE.strand;
+
+// coverage of a cell by a mountain range: -1 none, 64 full, else a RIDGE key
+function ridgeCov(H, lx, ly, base) {
+  const h0 = H[lx & 2047];
+  const c = (h) => clamp(ly + 1 - (base - h), 0, 1);
+  const l = c((H[(lx - 1) & 2047] + h0) / 2), m = c(h0), r = c((h0 + H[(lx + 1) & 2047]) / 2);
+  if (l >= 1 && m >= 1 && r >= 1) return 64;
+  if (l <= 0 && m <= 0 && r <= 0) return -1;
+  return Math.round(l * 3) * 16 + Math.round(m * 3) * 4 + Math.round(r * 3);
+}
 
 export function initCompose(renderer, seed) {
   R = renderer;
@@ -52,7 +103,8 @@ function ranges(out, s, hmin, hmax, smin, smax, gap) {
 }
 
 // colour helpers writing straight into the buffers
-function put(o, gl, fr, fgc, fb, br, bgc, bb, self, er, eg, eb, sky) {
+function put(o, gl, fr, fgc, fb, br, bgc, bb, self, er, eg, eb, sky, ti = 0, bits = 0, rim = 0) {
+  TI[o] = ti; TI[o + 1] = bits; TI[o + 2] = rim; TI[o + 3] = 0;
   FG[o] = fr; FG[o + 1] = fgc; FG[o + 2] = fb; FG[o + 3] = gl;
   BG[o] = br; BG[o + 1] = bgc; BG[o + 2] = bb; BG[o + 3] = self;
   EM[o] = er; EM[o + 1] = eg; EM[o + 2] = eb; EM[o + 3] = sky;
@@ -63,7 +115,10 @@ let lastFrameT = 0;
 
 export function compose(view, time) {
   const W = G.world, env = G.env;
-  FG = R.fg; BG = R.bg; EM = R.em; cols = R.cols; rows = R.rows;
+  FG = R.fg; BG = R.bg; EM = R.em; TI = R.ti; cols = R.cols; rows = R.rows;
+  PIX = G.settings.pixel !== false;
+  LF = R.leaf;
+  LF.fill(0);
   const { w, h, t, d, v, a, c } = W;
   const ox = view.ox, oy = view.oy;
   const pal = skyPalette(env);
@@ -106,6 +161,11 @@ export function compose(view, time) {
   const auroraAmt = env.aurora;
   const rainbow = env.rainbow;
   const rbCX = cols * 0.5, rbCY = horRow + 6, rbR = Math.min(cols * 0.42, 70);
+
+  // in pixel mode the sun and moon are smooth discs drawn by the shader
+  view.sun = [sunX + 0.5, sunY + 0.5, sunR * 1.05, env.sunElev > -0.25 ? 1 : 0];
+  view.moon = [moonX + 0.5, moonY + 0.5, moonR * 1.05, moonElev > -0.25 ? ((env.day % 8) / 8) * 2 - 1 : 9];
+  view.ecl = env.eclipse || 0;
 
   // shooting stars
   if (starAmt > 0.3 && Math.random() < dtF * 0.25) {
@@ -188,11 +248,11 @@ export function compose(view, time) {
       else run[vx] = 0;
 
       // ── backdrop (sky / cave) ──
-      let br, bgc, bb, bgl = g.space, bfr = 0, bfg = 0, bfb = 0, bself = SELF, sky = 0, bem = 0;
+      let br, bgc, bb, bgl = g.space, bfr = 0, bfg = 0, bfb = 0, bself = SELF, sky = 0, bem = 0, bti = 0, openSky = 0;
       const mix = tt === 0 ? 1 : MIX[tt];
       {
         if (skyBack) {
-          br = sr; bgc = sg; bb = sb; sky = above ? 255 : 0;
+          br = sr; bgc = sg; bb = sb; sky = above ? 255 : 0; openSky = 1;
           // stars
           if (starAmt > 0.01) {
             const hs = hash2(vx + Math.floor(view.camX * 0.04), vy + Math.floor(view.camY * 0.04), 7);
@@ -244,7 +304,7 @@ export function compose(view, time) {
               const ec = env.eclipse;
               const core = ds < 0.55 ? g.full : ds < 0.78 ? g.dk : ds < 0.92 ? g.md : g.lt;
               const ecl = ec > 0 && ds < 0.95 * ec ? 1 : 0;
-              bgl = ecl ? g.full : core;
+              bgl = PIX ? g.space : ecl ? g.full : core;
               bfr = ecl ? 10 : 255; bfg = ecl ? 8 : 238 - ds * 50; bfb = ecl ? 16 : 170 - ds * 90;
               bem = ecl ? 0 : 0.85 * (1 - env.cover * 0.5);
             }
@@ -259,7 +319,7 @@ export function compose(view, time) {
               const ph = ((env.day % 8) / 8) * 2 - 1;
               const sdx = dxs - ph * 1.3, sd = Math.sqrt(sdx * sdx + dys * dys);
               if (sd > 0.9 || Math.abs(ph) < 0.15) {
-                bgl = ds < 0.6 ? g.full : ds < 0.85 ? g.dk : g.md;
+                bgl = PIX ? g.space : ds < 0.6 ? g.full : ds < 0.85 ? g.dk : g.md;
                 bfr = 225; bfg = 230; bfb = 250;
                 bem = 0.25;
               }
@@ -280,32 +340,50 @@ export function compose(view, time) {
           const hF = farH[lxF], topF = farBase - hF;
           const lyN = wy - nShiftY, lxN = (vx + nx0) & 2047;
           const hN = nearH[lxN], topN = nearBase - hN;
-          if (lyN >= Math.floor(topN)) {
-            const k = 0.66;
-            br = br * (1 - k) + (sr * 0.3 + 14) * k; bgc = bgc * (1 - k) + (sg * 0.3 + 14) * k; bb = bb * (1 - k) + (sb * 0.38 + 24) * k;
-            bem = 0;
-            if (lyN - Math.floor(topN) < 1) {
-              const dl = nearH[(lxN - 1) & 2047], dr = nearH[(lxN + 1) & 2047];
-              bgl = dl < hN && dr < hN ? g.caret : dr > dl ? g.slash : g.bslash;
-              const lit = 26 + 40 * env.daylight;
-              bfr = br + lit; bfg = bgc + lit; bfb = bb + lit + 12;
-            } else if (hash2(lxN, Math.floor(lyN), 3) < 0.05) {
-              bgl = g.dot; bfr = br + 18; bfg = bgc + 18; bfb = bb + 24;
-            } else bgl = g.space;
-          } else if (lyF >= Math.floor(topF)) {
-            const k = 0.42;
-            br = br * (1 - k) + (sr * 0.55 + 20) * k; bgc = bgc * (1 - k) + (sg * 0.55 + 22) * k; bb = bb * (1 - k) + (sb * 0.62 + 36) * k;
-            bem = 0;
-            const depth = lyF - Math.floor(topF);
-            if (depth < 1) {
-              const dl = farH[(lxF - 1) & 2047], dr = farH[(lxF + 1) & 2047];
-              bgl = dl < hF && dr < hF ? g.caret : dr > dl ? g.slash : g.bslash;
-              const snow = hF > 13 ? 70 : 24;
-              bfr = br + snow; bfg = bgc + snow; bfb = bb + snow + 14;
-            } else if (hF > 13 && depth < 2.5) {
-              bgl = hash2(lxF, Math.floor(lyF), 5) < 0.5 ? g.dot : g.mid;
-              bfr = br + 50; bfg = bgc + 52; bfb = bb + 60;
-            } else { bgl = g.space; }
+          if (PIX) {
+            // smooth silhouettes: the ridge line is sampled at both edges and the middle of the cell
+            const nc = ridgeCov(nearH, lxN, lyN, nearBase);
+            const fc = nc === 64 ? -1 : ridgeCov(farH, lxF, lyF, farBase);
+            if (nc >= 0 || fc >= 0) {
+              bem = 0; bgl = g.space; openSky = 0;
+              const kn = 0.66, kf = 0.42;
+              const nR = br * (1 - kn) + (sr * 0.3 + 14) * kn, nG = bgc * (1 - kn) + (sg * 0.3 + 14) * kn, nB = bb * (1 - kn) + (sb * 0.38 + 24) * kn;
+              const fR = br * (1 - kf) + (sr * 0.55 + 20) * kf, fG = bgc * (1 - kf) + (sg * 0.55 + 22) * kf, fB = bb * (1 - kf) + (sb * 0.62 + 36) * kf;
+              if (nc === 64) { br = nR; bgc = nG; bb = nB; }
+              else {
+                if (fc === 64) { br = fR; bgc = fG; bb = fB; }
+                if (nc >= 0) { bti = RIDGE[nc]; bfr = nR; bfg = nG; bfb = nB; }
+                else if (fc >= 0 && fc < 64) { bti = RIDGE[fc]; bfr = fR; bfg = fG; bfb = fB; }
+              }
+            }
+          } else {
+            if (lyN >= Math.floor(topN)) {
+              const k = 0.66;
+              br = br * (1 - k) + (sr * 0.3 + 14) * k; bgc = bgc * (1 - k) + (sg * 0.3 + 14) * k; bb = bb * (1 - k) + (sb * 0.38 + 24) * k;
+              bem = 0;
+              if (lyN - Math.floor(topN) < 1) {
+                const dl = nearH[(lxN - 1) & 2047], dr = nearH[(lxN + 1) & 2047];
+                bgl = dl < hN && dr < hN ? g.caret : dr > dl ? g.slash : g.bslash;
+                const lit = 26 + 40 * env.daylight;
+                bfr = br + lit; bfg = bgc + lit; bfb = bb + lit + 12;
+              } else if (hash2(lxN, Math.floor(lyN), 3) < 0.05) {
+                bgl = g.dot; bfr = br + 18; bfg = bgc + 18; bfb = bb + 24;
+              } else bgl = g.space;
+            } else if (lyF >= Math.floor(topF)) {
+              const k = 0.42;
+              br = br * (1 - k) + (sr * 0.55 + 20) * k; bgc = bgc * (1 - k) + (sg * 0.55 + 22) * k; bb = bb * (1 - k) + (sb * 0.62 + 36) * k;
+              bem = 0;
+              const depth = lyF - Math.floor(topF);
+              if (depth < 1) {
+                const dl = farH[(lxF - 1) & 2047], dr = farH[(lxF + 1) & 2047];
+                bgl = dl < hF && dr < hF ? g.caret : dr > dl ? g.slash : g.bslash;
+                const snow = hF > 13 ? 70 : 24;
+                bfr = br + snow; bfg = bgc + snow; bfb = bb + snow + 14;
+              } else if (hF > 13 && depth < 2.5) {
+                bgl = hash2(lxF, Math.floor(lyF), 5) < 0.5 ? g.dot : g.mid;
+                bfr = br + 50; bfg = bgc + 52; bfb = bb + 60;
+              } else { bgl = g.space; }
+            }
           }
         } else {
           // cave air
@@ -317,7 +395,7 @@ export function compose(view, time) {
       }
 
       if (tt === 0) {
-        put(o, bgl, bfr, bfg, bfb, br, bgc, bb, bself, bfr * bem, bfg * bem, bfb * bem, sky);
+        put(o, bgl, bfr, bfg, bfb, br, bgc, bb, bself, bfr * bem, bfg * bem, bfb * bem, sky, PIX ? bti || SKY_TILE[bgl] : 0, PIX ? openSky : 0);
         if (reveal < 1) revealFx(o, wx, wy, reveal, time);
         continue;
       }
@@ -425,7 +503,7 @@ export function compose(view, time) {
           let cr = 70, cg = 160, cb = 62;
           if (sp === SP.PINE) { cr = 40; cg = 120; cb = 70; gl = g.pine[vv & 3]; }
           else if (sp === SP.PALM) { cr = 90; cg = 190; cb = 70; gl = g.palm[vv & 3]; }
-          else if (sp === SP.CHERRY && season === 0) { cr = 255; cg = 150 + hv * 50; cb = 200; gl = g.cherry[vv % 5]; }
+          else if (sp === SP.CHERRY && season === 0) { cr = 255; cg = 150 + hv * (PIX ? 14 : 50); cb = 200; gl = g.cherry[vv % 5]; }
           else if (sp === SP.BIRCH) { cr = 140; cg = 200; cb = 70; }
           if (sp !== SP.PINE && sp !== SP.PALM) {
             if (season === 0 && sp !== SP.CHERRY) { cr += 30; cg += 40; }
@@ -434,7 +512,8 @@ export function compose(view, time) {
               cr = k === 0 ? 235 : k === 1 ? 220 : 180; cg = k === 0 ? 120 : k === 1 ? 180 : 60; cb = 40;
             } else if (season === 3) { cr = 150; cg = 120; cb = 80; }
           }
-          fr = cr + (hv - 0.5) * 30; fgc = cg + (hv - 0.5) * 40; fb = cb;
+          const jv = PIX ? 0.3 : 1;
+          fr = cr + (hv - 0.5) * 30 * jv; fgc = cg + (hv - 0.5) * 40 * jv; fb = cb;
           r2 = fr * 0.22; g2 = fgc * 0.24; b2 = fb * 0.22;
           if (season === 3 && t[i - w] === 0) { fr = 230; fgc = 236; fb = 245; }
           const sway = Math.sin(time * 1.3 + wx * 0.4) * env.wind;
@@ -465,6 +544,11 @@ export function compose(view, time) {
           const wet = a[i] & 1 || env.raining;
           const dark = storm ? 0.42 : wet ? 0.72 : 1;
           fr = cloudTint[0] * dark; fgc = cloudTint[1] * dark; fb = cloudTint[2] * dark * 1.02;
+          if (storm || wet) {
+            // rain clouds turn slate grey rather than brown
+            const lum = fr * 0.3 + fgc * 0.59 + fb * 0.11, kk = storm ? 0.6 : 0.35;
+            fr += (lum * 0.95 - fr) * kk; fgc += (lum - fgc) * kk; fb += (lum * 1.12 - fb) * kk;
+          }
           const k = 0.55;
           r2 = br * (1 - k) + fr * 0.8 * k; g2 = bgc * (1 - k) + fgc * 0.8 * k; b2 = bb * (1 - k) + fb * 0.8 * k;
           self = SELF; skyC = sky;
@@ -551,14 +635,165 @@ export function compose(view, time) {
           break;
       }
 
+      // ── pixel-art tiles ──
+      let ti = 0, bits = 0, rim = 0;
+      if (PIX) {
+        const list = TEX[tt];
+        if (list && !(tt === E.SNOW && gl !== LUT_G[L])) {
+          ti = list[vv % list.length];
+          rim = RIM[tt];
+          if (tt === E.GRASS && t[i - w] === E.SNOW) ti = TL.snow[vv & 1];
+          if (rim) {
+            bits = (OPEN[t[i - w]] ? 1 : 0) | (OPEN[t[i + 1]] ? 2 : 0) | (OPEN[t[i + w]] ? 4 : 0) | (OPEN[t[i - 1]] ? 8 : 0);
+            // a lone step on a hillside becomes a slope
+            if (SLOPED[tt] && (bits & 1) && !(bits & 4) && ((bits & 10) === 2 || (bits & 10) === 8)) {
+              const k = tt === E.DIRT || tt === E.ASH ? 0.55 : 1;
+              fr = r2 + (fr - r2) * k; fgc = g2 + (fgc - g2) * k; fb = b2 + (fb - b2) * k;
+              if (tt === E.GRASS && t[i - w] === E.SNOW) { fr = 236; fgc = 240; fb = 248; }
+              gl = bits & 8 ? G_LR : G_LL;
+              r2 = br; g2 = bgc; b2 = bb; self = bself === SELF ? SELF_BG : 0; skyC = sky;
+              ti = 0; rim = 0; bits = 0;
+            }
+          }
+        } else {
+          switch (tt) {
+            case E.WATER: case E.FISH: case E.ACID: case E.OIL: {
+              if (tt === E.FISH) { ti = gl === g.fishR ? TILE.fishR : TILE.fishL; break; }
+              if (c[i] && tt === E.WATER) { ti = TILE.plus; break; }
+              if (tt === E.WATER && falling) { ti = TL.rain[(vv + frame) & 3]; break; }
+              const up = t[i - w];
+              if (up !== tt && up !== E.FISH && (up === 0 || OPEN[up])) {
+                ti = TL.wave[((Math.floor(wx * 0.6 + time * 2.4) % 3) + 3) % 3]; rim = 3; bits = 1;
+              } else if (tt === E.WATER && gl !== g.space) ti = TILE.glint;
+              else gl = g.space;
+              break;
+            }
+            case E.LAVA:
+              ti = t[i - w] !== E.LAVA ? TL.lavaTop[(vv + frame) % 3] : TL.lava[(vv + (frame >> 2)) % 3];
+              break;
+            case E.FIRE: ti = TL.flame[(vv + frame + (i & 7)) & 3]; break;
+            case E.SMOKE: case E.STEAM: ti = TL.puff[vv % 3]; break;
+            case E.WOOD: {
+              const sp = a[i] & 7;
+              if (gl === g.fs || gl === g.bs) {
+                ti = gl === g.fs ? TILE.branchR : TILE.branchL;
+                fr *= 0.72; fgc *= 0.72; fb *= 0.72;
+              }
+              else if (sp === SP.PINE && t[i - 1] === E.LEAF && t[i + 1] === E.LEAF) {
+                // a conifer's trunk hides inside its needles
+                const sw = season === 3 ? 0.85 : 1;
+                fr = 40 * sw; fgc = 120 * sw; fb = 70 * sw; r2 = 20; g2 = 66; b2 = 38;
+                ti = TL.pine[(wx + wy) & 1];
+              } else {
+                ti = sp === SP.PALM ? TILE.palm : sp === SP.BIRCH ? TILE.birch : TL.bark[wx & 1];
+                rim = 4; bits = (OPEN[t[i + 1]] && t[i + 1] !== E.LEAF ? 2 : 0) | (OPEN[t[i - 1]] && t[i - 1] !== E.LEAF ? 8 : 0);
+              }
+              break;
+            }
+            case E.LEAF: {
+              const sp = a[i] & 7;
+              const lo = (n) => (OPEN[n] && n !== E.LEAF ? 1 : 0);
+              const m = lo(t[i - w]) | (lo(t[i + 1]) << 1) | (lo(t[i + w]) << 2) | (lo(t[i - 1]) << 3);
+              if (sp === SP.PINE) {
+                // conifers: tiers of needles under a smooth conical outline
+                r2 = fr * 0.5; g2 = fgc * 0.55; b2 = fb * 0.55;
+                ti = TL.pine[(wx + wy) & 1];
+                const isP = (j) => t[j] === E.LEAF && (a[j] & 7) === SP.PINE;
+                if (!isP(i - w)) {
+                  const top = (xx) => {
+                    let j = wy * w + xx;
+                    if (isP(j)) { let y = wy; while (y > 1 && isP((y - 1) * w + xx)) y--; return y; }
+                    for (let k = 1; k <= 3; k++) if (isP((wy + k) * w + xx)) return wy + k;
+                    return wy + 2;
+                  };
+                  const cl = clamp(wy + 1 - (wy + top(wx - 1)) / 2, 0, 1), cr = clamp(wy + 1 - (wy + top(wx + 1)) / 2, 0, 1);
+                  if (cl < 1 || cr < 1) {
+                    ti = RIDGE[Math.round(cl * 3) * 16 + 12 + Math.round(cr * 3)];
+                    r2 = br; g2 = bgc; b2 = bb; self = bself === SELF ? SELF_BG : 0; skyC = sky;
+                  }
+                }
+              } else if (sp === SP.PALM) {
+                ti = TL.frond[vv & 1];
+                rim = 2; bits = m;
+              } else {
+                // broadleaf canopies are drawn by the shader from the leaf map
+                LF[o] = fr; LF[o + 1] = fgc; LF[o + 2] = fb; LF[o + 3] = 255;
+                gl = g.space;
+                r2 = br; g2 = bgc; b2 = bb; self = bself === SELF ? SELF_BG : 0; skyC = sky;
+              }
+              break;
+            }
+            case E.SNOW: if (t[i + w] === 0) ti = TILE.dot2; break;
+            case E.CLOUD:
+              // puffy clouds come from the same smooth field as the canopies
+              LF[o] = fr; LF[o + 1] = fgc; LF[o + 2] = fb; LF[o + 3] = 240;
+              gl = g.space; r2 = br; g2 = bgc; b2 = bb;
+              break;
+            case E.BOLT: ti = gl === g.bs ? TILE.boltL : gl === g.fs ? TILE.boltR : TILE.boltV; break;
+            case E.GLITCH: ti = TL.glitch[(vv + frame) & 3]; break;
+            case E.BIRD: ti = gl === g.birdUp ? TILE.birdUp : TILE.birdDn; break;
+            case E.BUTTERFLY: ti = gl === g.bfly[0] ? TILE.bflyA : TILE.bflyB; break;
+            case E.FIREFLY: ti = gl === g.fly[1] ? TILE.flyL : TILE.flyS; break;
+            case E.WORM: ti = TILE.worm; break;
+            case E.SEED: ti = TILE.seed; break;
+            case E.PLANT: ti = TL.tuft[vv % 3]; break;
+            case E.FLOWER: ti = TL.flower[vv & 3]; break;
+            case E.SAPLING: ti = TL.sapling[vv & 1]; break;
+            case E.SHROOM: ti = TL.shroom[vv & 1]; break;
+            case E.TORCH: ti = TILE.torch; break;
+            case E.CROP: {
+              const st = d[i];
+              ti = TL.crop[st < 40 ? 0 : st < 90 ? 1 : st < 150 ? 2 : st < 210 ? 3 : 4];
+              break;
+            }
+            case E.STRUCT: {
+              if (vv === MAT.FLAME) { ti = TL.flame[(frame + (i & 3)) & 3]; break; }
+              if (WALL[gl]) {
+                ti = STRUCT_TEX[vv] || 0;
+                if (ti) {
+                  rim = 1;
+                  bits = (t[i - w] !== E.STRUCT ? 1 : 0) | (t[i + 1] !== E.STRUCT ? 2 : 0) | (t[i + w] !== E.STRUCT && OPEN[t[i + w]] ? 4 : 0) | (t[i - 1] !== E.STRUCT ? 8 : 0);
+                }
+              } else if (STRUCT_SHAPE[gl]) ti = STRUCT_SHAPE[gl];
+              else if (PARTIAL[gl]) {
+                if (gl === g.fs) gl = G_LR; else if (gl === g.bs) gl = G_LL;
+                r2 = br; g2 = bgc; b2 = bb; self = (self & 0xf0) | (bself === SELF ? SELF_BG : 0); skyC = sky;
+              }
+              break;
+            }
+            default: break;
+          }
+          if (!ti && gl !== g.space && !PARTIAL[gl]) ti = FX_TILE[gl];
+        }
+      }
+
       // see-through elements take the backdrop
       if (mix > 0 && tt !== E.SMOKE && tt !== E.STEAM && tt !== E.CLOUD && tt !== E.FIRE && tt !== E.BOLT) {
         r2 = r2 * (1 - mix) + br * mix; g2 = g2 * (1 - mix) + bgc * mix; b2 = b2 * (1 - mix) + bb * mix;
         if (above && self === 0) self = SELF_BG;
         if (above) skyC = sky * mix;
       }
-      put(o, gl, fr, fgc, fb, r2, g2, b2, self, er * 255, eg * 255, eb * 255, skyC);
+      put(o, gl, fr, fgc, fb, r2, g2, b2, self, er * 255, eg * 255, eb * 255, skyC, ti, bits, rim);
       if (reveal < 1) revealFx(o, wx, wy, reveal, time);
+    }
+  }
+
+  // cells next to a leaf take part in the canopy field
+  if (PIX) {
+    for (let vy = 0; vy < rows; vy++) {
+      for (let vx = 0; vx < cols; vx++) {
+        if (LF[(vy * cols + vx) * 4 + 3] < 240) continue;
+        for (let j = -1; j <= 1; j++) {
+          const yy = vy + j;
+          if (yy < 0 || yy >= rows) continue;
+          for (let k = -1; k <= 1; k++) {
+            const xx = vx + k;
+            if (xx < 0 || xx >= cols) continue;
+            const q = (yy * cols + xx) * 4 + 3;
+            if (LF[q] === 0) LF[q] = 128;
+          }
+        }
+      }
     }
   }
 
@@ -624,13 +859,14 @@ function revealFx(o, wx, wy, p, time) {
   const local = (p * 1.35 - dist);
   if (local >= 0.12) return;
   if (local < -0.02) {
-    FG[o] = 0; FG[o + 1] = 0; FG[o + 2] = 0; FG[o + 3] = 0;
+    FG[o] = 0; FG[o + 1] = 0; FG[o + 2] = 0; FG[o + 3] = 0; TI[o] = 0; TI[o + 2] = 0;
     BG[o] = 0; BG[o + 1] = 2; BG[o + 2] = 4; BG[o + 3] = SELF;
     EM[o] = 0; EM[o + 1] = 0; EM[o + 2] = 0; EM[o + 3] = 0;
     return;
   }
   const k = clamp(local / 0.12, 0, 1);
   const hq = hash2(wx, wy + Math.floor(time * 20), 21);
+  TI[o] = PIX ? TL.glitch[Math.floor(hq * 4)] : 0; TI[o + 2] = 0;
   FG[o + 3] = RV[Math.floor(hq * RV.length)];
   FG[o] = 120 * (1 - k) + FG[o] * k; FG[o + 1] = 255 * (1 - k) + FG[o + 1] * k; FG[o + 2] = 170 * (1 - k) + FG[o + 2] * k;
   BG[o] *= k; BG[o + 1] *= k; BG[o + 2] *= k; BG[o + 3] = SELF;
@@ -643,6 +879,7 @@ export function overlayGlyph(view, wx, wy, glyph, r, gg, b, glow = 0, keepBg = t
   if (vx < 0 || vy < 0 || vx >= cols || vy >= rows) return;
   const o = (vy * cols + vx) * 4;
   FG[o] = r; FG[o + 1] = gg; FG[o + 2] = b; FG[o + 3] = glyph;
+  TI[o] = PIX ? FX_TILE[glyph] : 0; TI[o + 2] = 0; TI[o + 3] = 255;
   if (self !== null) BG[o + 3] = self;
   else if (glow > 0) BG[o + 3] = BG[o + 3] | 0xf0;
   if (glow > 0) { EM[o] = Math.min(255, EM[o] + r * glow); EM[o + 1] = Math.min(255, EM[o + 1] + gg * glow); EM[o + 2] = Math.min(255, EM[o + 2] + b * glow); }
@@ -652,7 +889,11 @@ export function overlayGlyph(view, wx, wy, glyph, r, gg, b, glow = 0, keepBg = t
 export function overlayText(view, wx, wy, str, r, gg, b, glow = 0.3) {
   let x = Math.round(wx - str.length / 2);
   for (const ch of str) {
-    if (ch !== ' ') overlayGlyph(view, x, wy, gi(ch), r, gg, b, glow, true, 255);
+    if (ch !== ' ') {
+      overlayGlyph(view, x, wy, gi(ch), r, gg, b, glow, true, 255);
+      const vx = x - view.ox, vy = wy - view.oy;
+      if (vx >= 0 && vy >= 0 && vx < cols && vy < rows) TI[(vy * cols + vx) * 4] = 0;
+    }
     x++;
   }
 }

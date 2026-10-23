@@ -47,7 +47,7 @@ const S = {
   copied: ['copié dans le presse-papiers', 'copied to clipboard'],
   // settings
   sCrt: ['effet CRT', 'CRT effect'], sBloom: ['halo lumineux', 'bloom'], sVolume: ['volume', 'volume'], sMusic: ['musique', 'music'], sSfx: ['effets', 'effects'],
-  sLang: ['langue', 'language'], sHints: ['astuces', 'hints'], sNew: ['nouveau monde', 'new world'], sExport: ['exporter en .txt', 'export as .txt'],
+  sLang: ['langue', 'language'], sHints: ['astuces', 'hints'], sLook: ['rendu', 'look'], sNew: ['nouveau monde', 'new world'], sExport: ['exporter en .txt', 'export as .txt'],
   sPhoto: ['photo (.png)', 'photo (.png)'], sReset: ['effacer la sauvegarde', 'erase save'], sMode: ['mode', 'mode'],
   confirmNew: ['Créer un nouveau monde ? Le monde actuel sera perdu.', 'Create a new world? The current one will be lost.'],
   confirmReset: ['Effacer définitivement la sauvegarde ?', 'Erase the save forever?'],

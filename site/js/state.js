@@ -29,6 +29,7 @@ export const G = {
     sfx: 0.8,
     muted: false,
     hints: true,
+    pixel: true,
   },
 };
 

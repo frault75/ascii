@@ -367,7 +367,7 @@ function settingsHTML() {
   const opt = (k, label, vals) => `<div class="set"><span>${label}</span><div class="opts">${vals.map(([v, l]) => `<button data-opt="${k}" data-val="${v}" class="${String(s[k]) === String(v) ? 'on' : ''}">${l}</button>`).join('')}</div></div>`;
   return `<div class="ttl"><b>${t('settings')}</b></div>
     ${sl('crt', t('sCrt'))}${sl('bloom', t('sBloom'))}${sl('volume', t('sVolume'))}${sl('music', t('sMusic'))}${sl('sfx', t('sSfx'))}
-    ${opt('lang', t('sLang'), [['fr', 'FR'], ['en', 'EN']])}${opt('hints', t('sHints'), [[true, t('on')], [false, t('off')]])}
+    ${opt('lang', t('sLang'), [['fr', 'FR'], ['en', 'EN']])}${opt('hints', t('sHints'), [[true, t('on')], [false, t('off')]])}${opt('pixel', t('sLook'), [[true, 'PIXEL'], [false, 'ASCII']])}
     <div class="set"><span>${t('sMode')}</span><span class="amber">${G.mode === 'sandbox' ? t('sandbox') : 'GENESIS'}</span></div>
     <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:12px">
       <button class="bt" data-act="export">${t('sExport')}</button>
@@ -380,8 +380,8 @@ function settingsHTML() {
 function guideHTML() {
   const fr = G.settings.lang === 'fr';
   return `<h3>${fr ? 'LE MONDE' : 'THE WORLD'}</h3><pre class="help">${fr
-    ? 'Tout ici est fait de texte, et tout réagit : l\'eau coule, le feu se propage,\nla lave fige au contact de l\'eau, les graines deviennent forêts.\n\nTa tribu ☺ vit seule : elle coupe du bois, pêche, cueille, bâtit,\ndort la nuit et prie. Sa prière te donne la FOI ◊.\n\nDépense la foi pour débloquer de nouveaux pouvoirs et pour\nles RÉVÉLATIONS qui font passer ta civilisation à l\'ère suivante.\n\nCombine les éléments pour faire des DÉCOUVERTES.'
-    : 'Everything here is made of text, and everything reacts: water flows, fire spreads,\nlava hardens in water, seeds grow into forests.\n\nYour tribe ☺ lives on its own: they chop wood, fish, gather, build,\nsleep at night and pray. Their prayers give you FAITH ◊.\n\nSpend faith to unlock new powers and for the REVELATIONS\nthat move your civilisation into the next era.\n\nCombine elements to make DISCOVERIES.'}</pre>`;
+    ? 'Tout ici est vivant, et tout réagit : l\'eau coule, le feu se propage,\nla lave fige au contact de l\'eau, les graines deviennent forêts.\n\nTa tribu vit seule : elle coupe du bois, pêche, cueille, bâtit,\ndort la nuit et prie. Sa prière te donne la FOI ◊.\n\nDépense la foi pour débloquer de nouveaux pouvoirs et pour\nles RÉVÉLATIONS qui font passer ta civilisation à l\'ère suivante.\n\nCombine les éléments pour faire des DÉCOUVERTES.'
+    : 'Everything here is alive, and everything reacts: water flows, fire spreads,\nlava hardens in water, seeds grow into forests.\n\nYour tribe lives on its own: they chop wood, fish, gather, build,\nsleep at night and pray. Their prayers give you FAITH ◊.\n\nSpend faith to unlock new powers and for the REVELATIONS\nthat move your civilisation into the next era.\n\nCombine elements to make DISCOVERIES.'}</pre>`;
 }
 
 function bindPanel(p, name) {

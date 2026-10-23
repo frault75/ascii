@@ -1,6 +1,7 @@
 // ─── renderer.js ── WebGL2: glyph atlas → lit cells → bloom → CRT ──────────
 import { CHARSET, PROCEDURAL } from './glyphs.js';
 import { FW, FH, INK } from './sprites.js';
+import { GRIDS, SOLID_TILE, AW, AH } from './tiles.js';
 
 const GW = 40, GH = 64, PAD = 4, CW = GW + PAD * 2, CH = GH + PAD * 2;
 export const FONT_STACK = '"JetBrains Mono", "DejaVu Sans Mono", "Cascadia Mono", Menlo, Consolas, "Liberation Mono", monospace';
@@ -135,6 +136,37 @@ export function buildAtlas() {
   return cv;
 }
 
+// pixel-art tiles share the glyph atlas layout; solid tiles are extruded into
+// the padding so mipmaps don't open seams between neighbouring cells
+export function buildTileAtlas() {
+  const cv = document.createElement('canvas');
+  cv.width = CW * 16;
+  cv.height = CH * 16;
+  const ctx = cv.getContext('2d');
+  ctx.fillStyle = '#fff';
+  const sx = GW / AW, sy = GH / AH;
+  GRIDS.forEach((grid, k) => {
+    if (!grid) return;
+    const x0 = (k % 16) * CW + PAD, y0 = Math.floor(k / 16) * CH + PAD;
+    for (let y = 0; y < AH; y++) {
+      for (let x = 0; x < AW; x++) {
+        const v = grid[y * AW + x];
+        if (v <= 0) continue;
+        ctx.globalAlpha = Math.min(1, v);
+        ctx.fillRect(x0 + x * sx, y0 + y * sy, sx, sy);
+      }
+    }
+    ctx.globalAlpha = 1;
+    if (SOLID_TILE[k]) {
+      ctx.drawImage(cv, x0, y0, GW, 1, x0, y0 - PAD, GW, PAD);
+      ctx.drawImage(cv, x0, y0 + GH - 1, GW, 1, x0, y0 + GH, GW, PAD);
+      ctx.drawImage(cv, x0, y0 - PAD, 1, GH + PAD * 2, x0 - PAD, y0 - PAD, PAD, GH + PAD * 2);
+      ctx.drawImage(cv, x0 + GW - 1, y0 - PAD, 1, GH + PAD * 2, x0 + GW, y0 - PAD, PAD, GH + PAD * 2);
+    }
+  });
+  return cv;
+}
+
 // ── shaders ────────────────────────────────────────────────────────────────
 const VS = `#version 300 es
 out vec2 vUv;
@@ -162,8 +194,10 @@ void main(){
 
 const FS_SCENE = `#version 300 es
 precision highp float;
-uniform sampler2D uFg, uBg, uEm, uLN, uLW, uAtlas;
-uniform vec2 uGrid, uCell, uOff, uRes;
+uniform sampler2D uFg, uBg, uEm, uLN, uLW, uAtlas, uTi, uTiles, uLeaf;
+uniform vec2 uGrid, uCell, uOff, uRes, uOrigin;
+uniform vec4 uSun, uMoon;
+uniform float uEcl;
 uniform vec3 uAmb;
 uniform float uSkyGain, uNGain, uWGain, uMinLight, uSat;
 layout(location = 0) out vec4 oColor;
@@ -171,6 +205,11 @@ layout(location = 1) out vec4 oGlow;
 const vec2 GSZ = vec2(${GW}.0, ${GH}.0);
 const vec2 CSZ = vec2(${CW}.0, ${CH}.0);
 const vec2 PADV = vec2(${PAD}.0, ${PAD}.0);
+const vec2 UNIT = vec2(${AW}.0, ${AH}.0);
+float hash12(vec2 q){ vec3 p3 = fract(vec3(q.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
+vec2 hash22(vec2 q){ vec3 p3 = fract(vec3(q.xyx) * vec3(0.1031, 0.1030, 0.0973)); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.xx + p3.yz) * p3.zy); }
+// one leaf cell's share of the canopy field (an ellipse, taller than wide)
+float K(vec2 d){ float q = d.x * d.x / 140.0 + d.y * d.y / 320.0; return q < 1.0 ? (1.0 - q) * (1.0 - q) : 0.0; }
 void main(){
   vec2 p = vec2(gl_FragCoord.x, uRes.y - gl_FragCoord.y) + uOff;
   vec2 cell = p / uCell;
@@ -180,11 +219,14 @@ void main(){
   vec4 fg = texelFetch(uFg, ci, 0);
   vec4 bg = texelFetch(uBg, ci, 0);
   vec4 em = texelFetch(uEm, ci, 0);
-  float g = floor(fg.a * 255.0 + 0.5);
+  vec4 ti = texelFetch(uTi, ci, 0);
+  float tix = floor(ti.r * 255.0 + 0.5);
+  float g = tix > 0.5 ? tix : floor(fg.a * 255.0 + 0.5);
   vec2 gpos = vec2(mod(g, 16.0), floor(g / 16.0));
   vec2 scale = GSZ / CSZ / 16.0;
   vec2 auv = gpos / 16.0 + (PADV + f * GSZ) / CSZ / 16.0;
-  float a = textureGrad(uAtlas, auv, dFdx(cell) * scale, dFdy(cell) * scale).a;
+  vec2 gx = dFdx(cell) * scale, gy = dFdy(cell) * scale;
+  float a = tix > 0.5 ? textureGrad(uTiles, auv, gx, gy).a : textureGrad(uAtlas, auv, gx, gy).a;
   vec2 luv = cell / uGrid;
   vec4 LN = texture(uLN, luv);
   vec4 LW = texture(uLW, luv);
@@ -195,12 +237,122 @@ void main(){
   float sf = floor(sv / 16.0) / 15.0;
   vec3 cb = bg.rgb * mix(lit, vec3(1.0), sb);
   vec3 cf = fg.rgb * mix(lit, vec3(1.0), sf);
-  vec3 col = mix(cb, cf, a);
+  bool ovl = ti.a > 0.5; // overlay glyph (text, particles) drawn above the foliage
+  vec3 col = ovl ? cb : mix(cb, cf, a);
+  float sunGlow = 0.0;
+  // sun & moon: crisp pixel discs in the open sky
+  if (ti.b < 0.002 && ti.g > 0.002 && ti.g < 0.006) {
+    vec2 cq = (floor(cell * UNIT) + 0.5) / UNIT;
+    vec2 ds = (cq - uSun.xy) * vec2(1.0, uCell.y / uCell.x) / uSun.z;
+    float r = length(ds);
+    if (uSun.w > 0.5 && r < 1.0) {
+      vec3 sc = r > 0.86 ? vec3(1.0, 0.8, 0.45) : mix(vec3(1.0, 0.98, 0.86), vec3(1.0, 0.9, 0.6), r);
+      if (uEcl > 0.0 && r < 0.95 * uEcl) sc = vec3(0.03, 0.02, 0.05);
+      else sunGlow = 0.9;
+      col = sc;
+    }
+    vec2 dm = (cq - uMoon.xy) * vec2(1.0, uCell.y / uCell.x) / uMoon.z;
+    float rm = length(dm);
+    if (uMoon.w < 2.0 && rm < 1.0) {
+      bool lit = length(dm - vec2(uMoon.w * 1.3, 0.0)) > 0.9 || abs(uMoon.w) < 0.15;
+      vec3 mc = vec3(0.88, 0.9, 0.98);
+      float cr = hash12(floor((cq - uMoon.xy) * UNIT / 2.0) + 7.0);
+      if (cr < 0.18) mc *= 0.86;
+      if (rm > 0.88) mc *= 0.9;
+      col = lit ? mc : mix(col, vec3(0.1, 0.12, 0.2), 0.7);
+      if (lit) sunGlow = 0.25;
+    }
+  }
+  // pixel-art edges: open sides of solid matter get a rim (one art pixel)
+  float st = floor(ti.b * 255.0 + 0.5);
+  if (st > 0.5) {
+    float bits = floor(ti.g * 255.0 + 0.5);
+    float eT = mod(bits, 2.0) * step(f.y, 1.0 / ${AH}.0);
+    float eR = mod(floor(bits / 2.0), 2.0) * step(1.0 - 1.0 / ${AW}.0, f.x);
+    float eB = mod(floor(bits / 4.0), 2.0) * step(1.0 - 1.0 / ${AH}.0, f.y);
+    float eL = mod(floor(bits / 8.0), 2.0) * step(f.x, 1.0 / ${AW}.0);
+    float side = max(max(eL, eR), eB);
+    if (st < 1.5) col *= (1.0 + 0.35 * eT) * (1.0 - 0.4 * side);
+    else if (st < 2.5) col *= 1.0 - 0.5 * max(side, eT);
+    else if (st < 3.5) col = mix(col, vec3(0.92, 0.97, 1.0) * max(lit.r, 0.5), 0.45 * eT);
+    else col *= 1.0 - 0.45 * max(eL, eR);
+  }
+  // canopies: a smooth field around every leaf cell, cut into lit leaf clumps
+  vec4 lf = texelFetch(uLeaf, ci, 0);
+  if (lf.a > 0.1) {
+    vec2 pw = floor((cell + uOrigin) * UNIT) + 0.5; // world-anchored art pixel
+    float f0 = 0.0, fu = 0.0, fd = 0.0, fl = 0.0, fr = 0.0, ft = 0.0, fb = 0.0, ws = 0.0, cw = 0.0;
+    vec3 lc = vec3(0.0);
+    for (int j = -1; j <= 1; j++) {
+      for (int i = -1; i <= 1; i++) {
+        ivec2 nc = ci + ivec2(i, j);
+        if (nc.x < 0 || nc.y < 0 || nc.x >= int(uGrid.x) || nc.y >= int(uGrid.y)) continue;
+        vec4 L = texelFetch(uLeaf, nc, 0);
+        if (L.a < 0.9) continue;
+        vec2 d = pw - (vec2(nc) + uOrigin + 0.5) * UNIT;
+        float k = K(d);
+        f0 += k; lc += L.rgb * k; ws += k; cw += (L.a < 0.97 ? k : 0.0);
+        fu += K(d + vec2(0.0, -3.0)); fd += K(d + vec2(0.0, 3.0));
+        fl += K(d + vec2(-1.0, 0.0)); fr += K(d + vec2(1.0, 0.0)); ft += K(d + vec2(0.0, -1.0)); fb += K(d + vec2(0.0, 1.0));
+      }
+    }
+    float thr = 0.5 + (hash12(floor(pw / 2.0)) - 0.5) * 0.3;
+    bool cloud = cw > ws * 0.5;
+    if (cloud) thr = 0.42 + (hash12(floor(pw / 3.0)) - 0.5) * 0.2;
+    if (f0 > thr && cloud) {
+      // cloud: big soft puffs, bright tops, a darker belly, a faint rim
+      vec3 base = lc / max(ws, 1e-4);
+      vec2 g0 = floor(pw / 16.0);
+      float d1 = 1e9; vec2 v1 = vec2(0.0);
+      for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) {
+        vec2 gc = g0 + vec2(float(i), float(j));
+        vec2 dv = pw - (gc + 0.2 + 0.6 * hash22(gc)) * 16.0;
+        dv.y *= 1.4;
+        float dd = dot(dv, dv);
+        if (dd < d1) { d1 = dd; v1 = dv; }
+      }
+      float sh = v1.y < -4.0 ? 1.08 : v1.y > 5.0 ? 0.9 : 1.0;
+      if (fu < thr) sh = 1.12;
+      if (fd < thr) sh = min(sh, 0.8);
+      vec3 c = base * sh;
+      if (fl < thr || fr < thr || ft < thr || fb < thr) c = base * 0.78;
+      col = c;
+    } else if (f0 > thr) {
+      vec3 base = lc / max(ws, 1e-4) * 0.86;
+      // leaf clusters: round clumps lit on top, shaded below, dark creases between
+      const float CS = 11.0;
+      vec2 g0 = floor(pw / CS);
+      float d1 = 1e9, d2 = 1e9;
+      vec2 v1 = vec2(0.0);
+      for (int j = -1; j <= 1; j++) {
+        for (int i = -1; i <= 1; i++) {
+          vec2 gc = g0 + vec2(float(i), float(j));
+          vec2 dv = pw - (gc + 0.2 + 0.6 * hash22(gc)) * CS;
+          dv.y *= 1.25;
+          float dd = dot(dv, dv);
+          if (dd < d1) { d2 = d1; d1 = dd; v1 = dv; } else if (dd < d2) d2 = dd;
+        }
+      }
+      float sh = 1.0;
+      float gap = sqrt(d2) - sqrt(d1);
+      if (gap < 1.2 && v1.y > -2.0) sh = 0.66;
+      else if (v1.y > 0.28 * CS) sh = 0.82;
+      else if (v1.y < -0.22 * CS && v1.x < 0.25 * CS) sh = 1.17;
+      float sp = hash12(pw + 17.0);
+      if (sp < 0.03) sh *= 1.2; else if (sp < 0.055) sh *= 0.8;
+      if (fu < thr) sh = max(sh, 1.28);
+      if (fd < thr) sh = min(sh, 0.68);
+      vec3 c = base * sh;
+      if (fl < thr || fr < thr || ft < thr || fb < thr) c = base * 0.3;
+      col = c * lit;
+    }
+  }
+  if (ovl) col = mix(col, cf, a);
   float l = dot(col, vec3(0.299, 0.587, 0.114));
   col = mix(vec3(l), col, uSat);
   oColor = vec4(col, 1.0);
   float glow = clamp(max(em.r, max(em.g, em.b)) * 1.4, 0.0, 1.0);
-  oGlow = vec4((cf * a + cb * 0.3 * (1.0 - a)) * glow, 1.0);
+  oGlow = vec4((cf * a + cb * 0.3 * (1.0 - a)) * glow + col * sunGlow, 1.0);
 }`;
 
 // sprites: instanced quads, palette-masked frames lit like the cells
@@ -381,6 +533,20 @@ export class Renderer {
     this.atlas = tex;
   }
 
+  setTiles(cv) {
+    const gl = this.gl;
+    const tex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, cv);
+    gl.generateMipmap(gl.TEXTURE_2D);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    this.tiles = tex;
+  }
+
   setSprites(sheet) {
     const gl = this.gl;
     const up = (cv) => {
@@ -448,13 +614,17 @@ export class Renderer {
   setGrid(cols, rows) {
     if (cols === this.cols && rows === this.rows) return;
     const gl = this.gl;
-    this.free([this.tFg, this.tBg, this.tEm, this.tL1, this.tL2, this.tL3, this.fL1, this.fL2, this.fL3]);
+    this.free([this.tFg, this.tBg, this.tEm, this.tTi, this.tLeaf, this.tL1, this.tL2, this.tL3, this.fL1, this.fL2, this.fL3]);
     this.cols = cols;
     this.rows = rows;
     const n = cols * rows * 4;
     this.fg = new Uint8ClampedArray(n);
     this.bg = new Uint8ClampedArray(n);
     this.em = new Uint8ClampedArray(n);
+    this.ti = new Uint8ClampedArray(n);
+    this.tTi = this.tex(cols, rows, gl.NEAREST);
+    this.leaf = new Uint8ClampedArray(n);
+    this.tLeaf = this.tex(cols, rows, gl.NEAREST);
     this.tFg = this.tex(cols, rows, gl.NEAREST);
     this.tBg = this.tex(cols, rows, gl.NEAREST);
     this.tEm = this.tex(cols, rows, gl.LINEAR);
@@ -518,6 +688,8 @@ export class Renderer {
     this.upload(this.tFg, this.fg);
     this.upload(this.tBg, this.bg);
     this.upload(this.tEm, this.em);
+    this.upload(this.tTi, this.ti);
+    this.upload(this.tLeaf, this.leaf);
     const { cols, rows } = this;
 
     // light: wide blur of the emission map (cells are ~1.6× taller than wide)
@@ -543,6 +715,14 @@ export class Renderer {
     bind(3, this.tL2.t, 'uLN');
     bind(4, this.tL3.t, 'uLW');
     bind(5, this.atlas, 'uAtlas');
+    bind(6, this.tTi.t, 'uTi');
+    bind(7, this.tiles || this.atlas, 'uTiles');
+    bind(8, this.tLeaf.t, 'uLeaf');
+    gl.uniform2f(S.u.uOrigin, o.ox || 0, o.oy || 0);
+    const sun = o.sun || [0, 0, 1, 0], moon = o.moon || [0, 0, 1, 9];
+    gl.uniform4f(S.u.uSun, sun[0], sun[1], sun[2], sun[3]);
+    gl.uniform4f(S.u.uMoon, moon[0], moon[1], moon[2], moon[3]);
+    gl.uniform1f(S.u.uEcl, o.ecl || 0);
     gl.uniform2f(S.u.uGrid, cols, rows);
     gl.uniform2f(S.u.uCell, o.cellW, o.cellH);
     gl.uniform2f(S.u.uOff, o.offX, o.offY);
