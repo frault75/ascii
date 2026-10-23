@@ -64,7 +64,7 @@ export function saveGame() {
   }
   const data = {
     ver: 1, time: Date.now(), mode: G.mode,
-    world: { w: W.w, h: W.h, seed: W.seed, sea: W.sea, volcano: W.volcano, tick: W.tick, water0: W.water0, biome: b64(W.biome), sky: b64(W.sky), t: rle(W.t), d: rle(W.d), v: rle(vKeep), lo: rle(lo), hi: rle(hi) },
+    world: { w: W.w, h: W.h, seed: W.seed, sea: W.sea, volcano: W.volcano, tick: W.tick, water0: W.water0, biome: b64(W.biome), sky: b64(W.sky), surf0: W.surf0 ? b64(new Uint8Array(W.surf0.buffer)) : null, t: rle(W.t), d: rle(W.d), v: rle(vKeep), lo: rle(lo), hi: rle(hi) },
     env: G.env,
     tribe: { ...T, claimed: [], villagers: T.villagers.map((v) => ({ ...v, ti: -1, state: v.inside ? 'inside' : 'idle', site: null, then: null })) },
     progress: G.progress,
@@ -99,6 +99,7 @@ export function loadGame() {
   }
   W.biome.set(unb64(s.biome));
   if (s.sky) W.sky.set(unb64(s.sky));
+  if (s.surf0) W.surf0 = new Int16Array(unb64(s.surf0).buffer);
   W.sea = s.sea;
   W.volcano = s.volcano;
   W.tick = s.tick || 0;

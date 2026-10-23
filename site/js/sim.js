@@ -77,6 +77,14 @@ function put(i, type, dd = 0, aa = 0) {
   t[i] = type; d[i] = dd; a[i] = aa; v[i] = (R() * 256) | 0; s[i] = F;
   wake(i);
 }
+// a block dug out from below: the ground above settles into the gap, so mines
+// become open pits instead of hidden caverns under a thin crust
+const SETTLES = new Set([E.STONE, E.DIRT, E.GRASS, E.SAND, E.SNOW, E.ICE, E.METAL, E.GOLD, E.OBSIDIAN, E.ASH, E.CRYSTAL, E.STARSTONE]);
+export function sinkCell(i) {
+  clear(i);
+  let j = i;
+  while (j - w >= 0 && SETTLES.has(t[j - w])) { swap(j, j - w); j -= w; }
+}
 function clear(i) {
   t[i] = 0; d[i] = 0; a[i] = 0; s[i] = F;
   wake(i);

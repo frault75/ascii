@@ -2,7 +2,7 @@
 import { G, emit, on } from './state.js';
 import { E, STAND, PASS, DEADLY, MAT, KIND, K, SP } from './elements.js';
 import { makeName, pick, hash2 } from './util.js';
-import { putCell, plantTree, wakeRect, speciesFor } from './sim.js';
+import { putCell, plantTree, wakeRect, speciesFor, sinkCell } from './sim.js';
 import { spawnFx, floatText } from './fx.js';
 import { gi } from './glyphs.js';
 import { DAY } from './weather.js';
@@ -160,7 +160,7 @@ const SOFT = new Set([E.DIRT, E.GRASS, E.SAND, E.SNOW, E.ASH, E.SEED]);
 const CLEAR = new Set([E.EMPTY, E.PLANT, E.FLOWER, E.SNOW, E.SEED, E.ASH, E.SMOKE, E.STEAM, E.BIRD, E.BUTTERFLY, E.FIREFLY, E.LEAF, E.WOOD, E.SAPLING]);
 
 // find a spot; builders level the ground (dig soft soil, fill small gaps)
-export function findSite(kind, cx, radius = 90, ignoreId = 0) {
+export function findSite(kind, cx, radius = 90, ignoreId = 0, rise = 14) {
   const B = BUILDINGS[kind];
   const bw = B.rows[0].length, bh = B.rows.length;
   const w = W();
@@ -189,7 +189,7 @@ export function findSite(kind, cx, radius = 90, ignoreId = 0) {
       if (!ok) continue;
       if (G.tribe.bad && G.tribe.bad[x0] > G.env.day) continue;
       const Y = Math.round(sum / bw);
-      if (Math.abs(Y - w.surf[Math.round(cx)]) > 14) continue;
+      if (Math.abs(Y - w.surf[Math.round(cx)]) > rise) continue;
       for (let c = 0; c < bw && ok; c++) if (Math.abs(gy[c] - Y) > 2) ok = false;
       if (!ok) continue;
       const top = Y - bh;
@@ -296,14 +296,9 @@ function checkBuilding(b) {
 }
 
 const TIER = { tent: 1, hut: 2, house: 3, stonehouse: 4, tower: 5 };
-function oldestBelow(tier) {
-  let best = null;
-  for (const b of G.tribe.buildings) {
-    const tb = TIER[b.kind];
-    if (!tb || tb >= tier) continue;
-    if (!best || tb < TIER[best.kind] || (tb === TIER[best.kind] && b.id < best.id)) best = b;
-  }
-  return best;
+// dwellings that could make way for a better one, humblest and oldest first
+function humblerThan(tier) {
+  return G.tribe.buildings.filter((b) => TIER[b.kind] && TIER[b.kind] < tier).sort((a, b) => TIER[a.kind] - TIER[b.kind] || a.id - b.id);
 }
 
 export function demolish(b) {
@@ -360,12 +355,19 @@ const P = {
     const w = W();
     return STAND[tt] && tt !== E.STRUCT && w.t[i - w.w] === E.EMPTY && (w.t[i + 1 - w.w] === E.WATER || w.t[i - 1 - w.w] === E.WATER || w.t[i + 1] === E.WATER || w.t[i - 1] === E.WATER);
   },
-  stone: (tt, i, x) => {
+  stone: (tt, i, x, y) => {
     const ok = tt === E.STONE || (G.tribe.era >= 3 && (tt === E.METAL || tt === E.GOLD)) || (G.tribe.era >= 2 && tt === E.GOLD);
-    return ok && !underBuilding(x);
+    return ok && y <= ground0(x) + 12 && !underBuilding(x);
   },
-  metal: (tt, i, x) => (tt === E.METAL || tt === E.GOLD) && !underBuilding(x),
+  metal: (tt, i, x, y) => (tt === E.METAL || tt === E.GOLD) && y <= ground0(x) + 22 && !underBuilding(x),
 };
+
+// the lie of the land before anyone dug into it: quarries never sink too deep
+function ground0(x) {
+  const w = W();
+  if (!w.surf0) w.surf0 = Int16Array.from(w.surf);
+  return w.surf0[x];
+}
 
 function underBuilding(x) {
   for (const b of G.tribe.buildings) if (x >= b.x - 2 && x <= b.x + b.w + 1) return true;
@@ -373,6 +375,14 @@ function underBuilding(x) {
 }
 
 // ── movement ───────────────────────────────────────────────────────────────
+function hollowWater(w, x, y) {
+  for (let k = 0; k < 24; k++) {
+    const q = w.t[(y + k) * w.w + x];
+    if (q !== E.WATER && q !== E.FISH) return !STAND[q];
+  }
+  return false;
+}
+
 function tryStep(v, dir) {
   const w = W();
   const { t } = w;
@@ -390,6 +400,8 @@ function tryStep(v, dir) {
       drop++;
     }
     if (DEADLY[bottom] || bottom === E.LAVA || bottom === E.ACID || bottom === E.OIL) return false;
+    // water with nothing under it is a falling stream, not a pond
+    if ((bottom === E.WATER || c1 === E.WATER) && hollowWater(w, nx, c1 === E.WATER ? v.y : v.y + drop + 1)) return false;
     if (drop >= (v.state === 'flee' ? 9 : 5)) {
       // careful descent towards a lower destination
       if (walking && v.ty > v.y + 2) { v.x = nx; v.descend = true; return true; }
@@ -406,7 +418,7 @@ function tryStep(v, dir) {
     const up2 = t[(v.y - 2) * w.w + nx], up2Here = t[(v.y - 2) * w.w + v.x];
     if (!canOccupy(up) && canOccupy(up2) && canOccupy(upHere) && canOccupy(up2Here)) { v.x = nx; v.y -= 2; v.climb = 0; return true; }
     // scale the wall when the destination lies beyond it
-    if (walking && canOccupy(upHere) && (v.climb || 0) < 10 && Math.abs(v.tx - v.x) > 1) {
+    if (walking && canOccupy(upHere) && (v.climb || 0) < 24 && Math.abs(v.tx - v.x) > 1) {
       v.y -= 1;
       v.climb = (v.climb || 0) + 1;
       return true;
@@ -428,10 +440,11 @@ function dig(v, dir) {
   return false;
 }
 
-// stuck under the target (at the bottom of a pit or a mine shaft): scale the nearest wall
+// stuck under the target (at the bottom of a pit or a mine shaft): scale the rock face
+const ROCK = new Set([E.DIRT, E.GRASS, E.SAND, E.SNOW, E.ASH, E.STONE, E.ICE, E.OBSIDIAN, E.METAL, E.GOLD, E.BEDROCK]);
 function climbOut(v) {
   const w = W(), t = w.t, i = v.y * w.w + v.x, up = i - w.w;
-  if (v.y < 4 || (v.climb || 0) > 24) return false;
+  if (v.y < 4 || (v.climb || 0) > 60) return false;
   // a tunnel roof overhead: dig a way up through it
   if (!canOccupy(t[up])) {
     const tt = t[up];
@@ -441,12 +454,15 @@ function climbOut(v) {
   }
   // over the lip of the wall
   for (const d of [v.dir, -v.dir]) {
-    if (!canOccupy(t[i + d]) && canOccupy(t[up + d])) { v.dir = d; v.x += d; v.y--; v.climb = 0; return true; }
+    if (ROCK.has(t[i + d]) && canOccupy(t[up + d])) { v.dir = d; v.x += d; v.y--; v.climb = 0; return true; }
   }
-  // or up the wall alongside
+  // or up the rock alongside
   for (const d of [v.dir, -v.dir]) {
-    if (!canOccupy(t[up + d])) { v.dir = d; v.y--; v.climb = (v.climb || 0) + 1; return true; }
+    if (ROCK.has(t[up + d])) { v.dir = d; v.y--; v.climb = (v.climb || 0) + 1; return true; }
   }
+  // no wall to hand: walk over to one
+  if (!v.climb && tryStep(v, v.dir)) return true;
+  v.dir = -v.dir;
   return false;
 }
 
@@ -508,12 +524,15 @@ function assign(v) {
     }
   } else if (job === 'stone') {
     const wantMetal = T.era >= 3 && T.metal < 40 && Math.random() < 0.55;
-    const tg = scanNear(v.x, 70, wantMetal ? P.metal : P.stone, 10, wantMetal ? 30 : T.era >= 3 ? 14 : 9);
+    const pred = wantMetal ? P.metal : P.stone, down = wantMetal ? 30 : T.era >= 3 ? 14 : 9;
+    // once the seams near the village run out, miners go further and dig deeper
+    const tg = scanNear(v.x, 70, pred, 10, down) || (T.era >= 2 ? scanNear(v.x, 170, pred, 10, down + 16) : null);
     if (tg) { claim(v, tg); walkTo(v, tg.x, W().surf[tg.x] - 1, 'mine'); return; }
   } else if (job === 'build') {
     const kind = T.building;
     if (kind && afford(BUILDINGS[kind].cost)) {
-      const site = findSite(kind, T.center);
+      // no room in the village: look further out, up and down the hills
+      const site = findSite(kind, T.center) || (kind !== 'lamp' ? findSite(kind, T.center, 160, 0, 26) : null);
       if (site) {
         pay(BUILDINGS[kind].cost);
         v.site = { kind, ...site };
@@ -524,19 +543,18 @@ function assign(v) {
       T.blocked = (T.blocked || 0) + 1;
       dbg('nosite:' + kind);
       // no free land: replace the oldest, humblest dwelling with a better one
-      const up = TIER[kind] ? oldestBelow(TIER[kind]) : null;
-      const s2 = up ? findSite(kind, up.x + (up.w >> 1), 10, up.id) : null;
+      let up = null, s2 = null;
+      for (const b of TIER[kind] ? humblerThan(TIER[kind]) : []) {
+        s2 = findSite(kind, b.x + (b.w >> 1), 10, b.id);
+        if (s2) { up = b; break; }
+      }
       if (s2) {
-        demolish(up);
-        {
-          pay(BUILDINGS[kind].cost);
-          v.site = { kind, ...s2 };
-          T.building = null;
-          emit('upgrade', up.kind, kind);
-          dbg('upgrade:' + kind);
-          walkTo(v, s2.x + (s2.bw >> 1), s2.y, 'build', 2);
-          return;
-        }
+        // the old dwelling comes down only when the builder gets there
+        pay(BUILDINGS[kind].cost);
+        v.site = { kind, ...s2, replace: up.id };
+        T.building = null;
+        walkTo(v, s2.x + (s2.bw >> 1), s2.y, 'build', 2);
+        return;
       }
       // nowhere to put it: try something else for a while
       (T.skip || (T.skip = {}))[kind] = G.env.time + 4000;
@@ -697,13 +715,15 @@ function finishWork(v) {
       const kind = tt === E.STONE ? 'stone' : tt === E.METAL || tt === E.GOLD ? 'metal' : null;
       if (kind) {
         let n = 0;
-        for (const o of [0, -1, 1, w.w, -w.w]) {
+        for (const o of [w.w, 0, -1, 1]) {
           const j = v.ti + o;
           const tj = w.t[j];
           if ((kind === 'stone' && tj === E.STONE) || (kind === 'metal' && (tj === E.METAL || tj === E.GOLD))) {
             n += tj === E.GOLD ? 2 : 1;
             if (tj === E.GOLD) emit('gold', v);
-            putCell(j, E.EMPTY);
+            // near the surface the quarry opens up; deeper down the galleries are backfilled with spoil
+            if (((j / w.w) | 0) <= ground0(j % w.w) + 6) sinkCell(j);
+            else putCell(j, kind === 'metal' ? E.STONE : E.DIRT);
             if (n >= 3) break;
           }
         }
@@ -718,6 +738,8 @@ function finishWork(v) {
       const s = v.site;
       v.site = null;
       if (s) {
+        const old = s.replace && T.buildings.find((b) => b.id === s.replace);
+        if (old) { demolish(old); emit('upgrade', old.kind, s.kind); dbg('upgrade:' + s.kind); }
         // the ground may have changed a little (a puddle, a clod, a sapling): builders
         // clear and level the footprint themselves, so only another structure stops them
         const clash = (x0, y0) => T.buildings.some((b) => x0 < b.x + b.w + 1 && x0 + s.bw + 1 > b.x && y0 - s.bh + 1 < b.y + b.h + 2 && y0 + 1 > b.y - 2) || (() => {
@@ -828,8 +850,11 @@ export function updateLife() {
         else {
           const sx = v.x + v.dir;
           const side = t[v.y * w.w + sx];
-          if (side === E.WATER || side === E.FISH || canOccupy(side)) v.x = sx;
+          // (out of the water only onto ground, never over a drop)
+          const landing = () => { for (let k = 1; k <= 4; k++) { const q = t[(v.y + k) * w.w + sx]; if (STAND[q] || q === E.WATER) return true; if (!PASS[q]) return false; } return false; };
+          if (side === E.WATER || side === E.FISH || (canOccupy(side) && landing())) v.x = sx;
           else if (canOccupy(t[(v.y - 1) * w.w + sx]) && canOccupy(up)) { v.x = sx; v.y--; }
+          else if (ROCK.has(side) && canOccupy(up) && v.state === 'walk') { v.y--; v.climb = 1; }
           else v.dir = -v.dir;
         }
       }
@@ -898,7 +923,7 @@ export function updateLife() {
       const dx = v.tx - v.x;
       if (Math.abs(dx) <= v.reach) {
         if (Math.abs(v.ty - v.y) <= 4 || (Math.abs(v.ty - v.y) <= 10 && ++v.stuck > 6)) { v.stuck = 0; arrive(v); }
-        else if (v.ty < v.y && climbOut(v)) v.stuck = 0;
+        else if (v.ty < v.y - 10 && climbOut(v)) v.stuck = 0;
         else if (++v.stuck > 30) giveUp(v);
         continue;
       }
@@ -1015,16 +1040,20 @@ function manage() {
   const have = { food: 0, wood: 0, stone: 0, build: 0, pray: 0, idle: 0 };
   for (const v of T.villagers) {
     if (v.jobT > 0) v.jobT--;
-    else if (v.job !== 'build' && v.state !== 'work') v.job = 'idle';
+    else if ((v.job !== 'build' || !v.site) && v.state !== 'work') v.job = 'idle';
     have[v.job] = (have[v.job] || 0) + 1;
   }
   const free = (v) => v.job === 'idle';
+  // the builder is someone free right now, up on the surface
+  // (shuffled within each group, so one villager stuck somewhere never holds the job for good)
+  const ready = (v) => (v.state === 'idle' ? 0 : 1) + (v.y > W().surf[v.x] + 2 ? 2 : 0) + Math.random() * 0.9;
+  const byReady = adults.map((v) => [ready(v), v]).sort((a, b) => a[0] - b[0]).map((e) => e[1]);
   for (const j of ['build', 'food', 'stone', 'wood', 'pray']) {
-    for (const v of adults) {
+    for (const v of j === 'build' ? byReady : adults) {
       if (have[j] >= want[j]) break;
       if (!free(v)) continue;
       have.idle--; have[j]++;
-      v.job = j; v.jobT = 40 + ((Math.random() * 80) | 0);
+      v.job = j; v.jobT = j === 'build' ? 20 : 40 + ((Math.random() * 80) | 0);
     }
   }
   const weights = [
